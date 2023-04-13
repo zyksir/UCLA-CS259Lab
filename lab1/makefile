@@ -9,6 +9,9 @@ test: cnn $(KERNEL)
 test-seq:
 	@$(MAKE) --no-print-directory test SEQUENTIAL=
 
+conv_seq: lib/macros.cuh lib/conv_seq.h lib/conv_gpu.h lib/conv_gpu.cu lib/conv_seq.cu
+	$(CXX) $(CXXFLAGS) -o $@ lib/conv_seq.cu lib/conv_gpu.cu
+
 cnn: $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o, $^) $(LDFLAGS)
 
