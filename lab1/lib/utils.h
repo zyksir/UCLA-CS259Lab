@@ -1,5 +1,14 @@
 #pragma once
 #include <string>
+#include <chrono>
+
+using std::chrono::duration_cast;
+using std::chrono::duration;
+using std::chrono::microseconds;
+using std::chrono::steady_clock;
+using std::clog;
+using std::endl;
+using std::string;
 
 bool IsDiffSingle(float a, float b);
 bool IsDiffMatrix(float* a, float* b, size_t msize);
@@ -16,6 +25,9 @@ void GenerateRandomMatrix(float* input, size_t input_size);
 inline void cuda_check(cudaError_t err, const char* file, int line) {
   if (err != cudaSuccess) {
     throw std::runtime_error(
-        std::string(file) + ":" + std::to_string(line) + ": " + std::string(cudaGetErrorString(err)));
+        string(file) + ":" + std::to_string(line) + ": " + string(cudaGetErrorString(err)));
   }
 }
+
+void print_performance_result(const uint64_t float_calculation_num, 
+  const duration<double>& duration, const string& name);

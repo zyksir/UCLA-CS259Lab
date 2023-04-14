@@ -2,15 +2,12 @@
 #include <cuda.h>
 #include <iostream>
 #include <random>
-#include <chrono>
 #include <stdexcept>
 #include <cuda_runtime.h>
 
 #include "lib/utils.h"
 #include "lib/macros.cuh"
 
-using std::clog;
-using std::endl;
 using std::max;
 
 #define weight(nn, ni) weight[(nn)*Ni + (ni)]
@@ -34,7 +31,7 @@ void fc_seq(const float *input, const float *weight, float *output) {
 // weight: Nn * Ni
 // output: Nn
 __global__ void fc_cuda_naive(const float *input, const float *weight, float *output) {
-
+ 
   int ty = threadIdx.x + blockIdx.x * BLOCKSIZEY;
 	float sum = 0;
 	for(int x = 0; x < Ni; ++x) {
@@ -84,6 +81,7 @@ __global__ void fc_cuda(const float *input, const float *weight, float *output) 
 }
 
 int main() {
+  const int64_t float_calculation_num = 2*Nn*Ni;
   auto input_length = Ni; auto input_size = input_length * sizeof(float);
   auto output_length = Nn; auto output_size = output_length * sizeof(float);
   auto weight_length = Nn * Ni; auto weight_size = weight_length * sizeof(float);
@@ -98,8 +96,8 @@ int main() {
 
   sta = std::chrono::steady_clock::now();
   fc_seq(input, weight, output);
-  std::chrono::duration<double> conv_seq_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[Conv Sequence]\tTimeCost:" << conv_seq_duration.count() << "ns" << std::endl;
+  std::chrono::duration<double> fc_seq_duration = std::chrono::steady_clock::now() - sta;
+  print_performance_result(float_calculation_num, fc_seq_duration, "FC SEQ");
 
   float* cuda_output = static_cast<float*>(malloc(output_size));
   float* g_input, *g_weight, *g_output;
@@ -122,7 +120,7 @@ int main() {
   fc_cuda<<<grid, block>>>(g_input, g_weight, g_output);
   CUDA_CHECK(cudaDeviceSynchronize());
   std::chrono::duration<double> fc_cuda_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[FC CUDA]\tTimeCost:" << fc_cuda_duration.count() << "ns" << std::endl;
+  print_performance_result(float_calculation_num, fc_cuda_duration, "FC CUDA");
 
   cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
   if (IsDiffMatrix(cuda_output, output, output_length)) {
@@ -137,7 +135,7 @@ int main() {
   fc_cuda_naive<<<GRIDDIMY, BLOCKSIZEY>>>(g_input, g_weight, g_output);
   CUDA_CHECK(cudaDeviceSynchronize());
   std::chrono::duration<double> fc_cuda_naive_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[FC CUDA NAIVE]\tTimeCost:" << fc_cuda_naive_duration.count() << "ns" << std::endl;
+  print_performance_result(float_calculation_num, fc_cuda_naive_duration, "FC CUDA NAIVE");
 
   cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
   if (IsDiffMatrix(cuda_output, output, output_length)) {

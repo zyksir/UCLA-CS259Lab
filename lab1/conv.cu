@@ -9,6 +9,10 @@
 #include "lib/utils.h"
 #include "lib/macros.cuh"
 
+// using std::chrono::duration_cast;
+// using std::chrono::duration;
+// using std::chrono::microseconds;
+// using std::chrono::steady_clock;
 using std::clog;
 using std::endl;
 using std::max;
@@ -57,7 +61,7 @@ constexpr int KERNEL_SQUARE = Kx * Ky;
 // input: Ni * NyPAD * NxPAD
 // weight: Nn * Ni * Ky * Kx
 // output: Nn * NySCL * NxSCL
-__global__ void conv_gpu(float* input, float* weight, float* output) {
+__global__ void conv_gpu(const float* input, const float* weight, float* output) {
     __shared__ float weight_blocked[BLOCK_CHANNEL][Kx][Ky];
     __shared__ float input_blocked[BLOCK_CHANNEL][BLOCK_IN_X][BLOCK_IN_X];
     float output_thread[KERNAL_COUNT];
@@ -121,6 +125,7 @@ __global__ void conv_gpu(float* input, float* weight, float* output) {
 }
 
 int main() {
+  const uint64_t float_calculation_num = 2*static_cast<uint64_t>(Nn)*Nx*Ny*Ni*Kx*Ky;
   auto input_length = Ni * NyPAD * NxPAD; auto input_size = input_length * sizeof(float);
   auto output_length = Nn * NySCL * NxSCL; auto output_size = output_length * sizeof(float);
   auto weight_length = Nn * Ni * Ky * Kx; auto weight_size = weight_length * sizeof(float);
@@ -136,7 +141,7 @@ int main() {
   sta = std::chrono::steady_clock::now();
   ConvSequential(input, weight, output);
   std::chrono::duration<double> conv_seq_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[Conv Sequence]\tTimeCost:" << conv_seq_duration.count() << "ns" << std::endl;
+  print_performance_result(float_calculation_num, conv_seq_duration, "CONV SEQ");
 
   float* cuda_output = static_cast<float*>(malloc(output_size));
   float* g_input, *g_weight, *g_output;
@@ -158,7 +163,7 @@ int main() {
   conv_gpu<<<grid, block>>>(g_input, g_weight, g_output);
   CUDA_CHECK(cudaDeviceSynchronize());
   std::chrono::duration<double> conv_gpu_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[Conv CUDA]\tTimeCost:" << conv_gpu_duration.count() << "ns" << std::endl;
+  print_performance_result(float_calculation_num, conv_gpu_duration, "CONV CUDA");
 
   cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
   if (IsDiffMatrix(cuda_output, output, output_length)) {

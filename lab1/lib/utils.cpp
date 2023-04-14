@@ -26,3 +26,11 @@ void GenerateRandomMatrix(float* input, size_t input_size) {
     input[i] = MyRand<float>(-1.0f, 1.0f);
   }
 }
+
+void print_performance_result(const uint64_t float_calculation_num, 
+  const duration<double>& duration, const string& name) {
+  uint64_t run_time_us = duration_cast<microseconds>(duration).count();
+  float gflops = float_calculation_num /(run_time_us * 1e3);
+  clog << "[" << name << "]\tTimeCost:" << duration.count() << "ns" << std::endl;
+  clog << "[" << name << "]\tGFLOPS:" << gflops << "gflops" << std::endl;
+}
