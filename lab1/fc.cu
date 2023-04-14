@@ -33,6 +33,20 @@ void fc_seq(const float *input, const float *weight, float *output) {
 // input: Ni
 // weight: Nn * Ni
 // output: Nn
+__global__ void fc_cuda_naive(const float *input, const float *weight, float *output) {
+
+  int ty = threadIdx.x + blockIdx.x * BLOCKSIZEY;
+	float sum = 0;
+	for(int x = 0; x < Ni; ++x) {
+		sum += input[x] * weight(ty, x);
+	}
+  output[ty] += sum;
+}
+
+// CUDA FC implementation
+// input: Ni
+// weight: Nn * Ni
+// output: Nn
 __global__ void fc_cuda(const float *input, const float *weight, float *output) {
 
   // int ty = threadIdx.y + blockIdx.y * BLOCKSIZEY;
@@ -109,6 +123,21 @@ int main() {
   CUDA_CHECK(cudaDeviceSynchronize());
   std::chrono::duration<double> fc_cuda_duration = std::chrono::steady_clock::now() - sta;
   clog << "[FC CUDA]\tTimeCost:" << fc_cuda_duration.count() << "ns" << std::endl;
+
+  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
+  if (IsDiffMatrix(cuda_output, output, output_length)) {
+    clog << "FAIL" << endl;
+  } else {
+    clog << "PASS" << endl;
+  }
+
+  /*****/
+  cudaMemset(g_output, 0, output_size);
+  sta = std::chrono::steady_clock::now();
+  fc_cuda_naive<<<GRIDDIMY, BLOCKSIZEY>>>(g_input, g_weight, g_output);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  std::chrono::duration<double> fc_cuda_naive_duration = std::chrono::steady_clock::now() - sta;
+  clog << "[FC CUDA NAIVE]\tTimeCost:" << fc_cuda_naive_duration.count() << "ns" << std::endl;
 
   cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
   if (IsDiffMatrix(cuda_output, output, output_length)) {
