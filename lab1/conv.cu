@@ -9,43 +9,41 @@
 #include "lib/utils.h"
 #include "lib/macros.cuh"
 
-// using std::chrono::duration_cast;
-// using std::chrono::duration;
-// using std::chrono::microseconds;
-// using std::chrono::steady_clock;
 using std::clog;
 using std::endl;
 using std::max;
 
-#define input(ni, h, w) input[(ni)*NyPAD*NxPAD + (h)*NxPAD + (w)]
-#define output(nn, h, w) output[(nn)*NySCL*NxSCL + (h)*NxSCL + (w)]
+#define input(b, ni, h, w) input[(b)*Ni*NyPAD*NxPAD + (ni)*NyPAD*NxPAD + (h)*NxPAD + (w)]
+#define output(b, nn, h, w) output[(b)*Nn*NySCL*NxSCL + (nn)*NySCL*NxSCL + (h)*NxSCL + (w)]
 #define weight(nn, ni, p, q) weight[(nn)*Ni*Ky*Kx + (ni)*Ky*Kx + (p)*Kx + (q)]
 
 // Sequential CNN implementation
-// input: Ni * NyPAD * NxPAD
+// input: BatchSize * Ni * NyPAD * NxPAD
 // weight: Nn * Ni * Ky * Kx
-// output: Nn * NySCL * NxSCL
+// output: BatchSize * Nn * NySCL * NxSCL
 void ConvSequential(const float *input,
     const float *weight,
     float *output) {
 
-  for(int nn = 0; nn < Nn; ++nn) {
-    for(int ny = 0; ny < Ny; ny += Sy) {
-      for(int nx = 0; nx < Nx; nx += Sx) {
-        int xout = nx / Sx;
-        int yout = ny / Sy;
-        float sum = 0.0f;
+  for(int b = 0; b < BatchSize; ++b) {
+    for(int nn = 0; nn < Nn; ++nn) {
+      for(int ny = 0; ny < Ny; ny += Sy) {
+        for(int nx = 0; nx < Nx; nx += Sx) {
+          int xout = nx / Sx;
+          int yout = ny / Sy;
+          float sum = 0.0f;
 
-        for(int ni = 0; ni < Ni; ++ni) {
-          for(int ky = 0; ky < Ky; ++ky) {
-            for(int kx = 0; kx < Kx; ++kx) {
-              sum += weight(nn, ni, ky, kx) * input(ni, ny+ky, nx+kx);
+          for(int ni = 0; ni < Ni; ++ni) {
+            for(int ky = 0; ky < Ky; ++ky) {
+              for(int kx = 0; kx < Kx; ++kx) {
+                sum += weight(nn, ni, ky, kx) * input(b, ni, ny+ky, nx+kx);
+              }
             }
           }
-        }
 
-        // Perform Relu
-        output(nn, yout, xout) = max(0.0f, sum);
+          // Perform Relu
+          output(b, nn, yout, xout) = max(0.0f, sum);
+        }
       }
     }
   }
@@ -57,10 +55,10 @@ constexpr int BLOCK_IN_X = (BLOCKSIZEX + Kx - 1);
 constexpr int BLOCK_IN_Y = (BLOCKSIZEY + Ky - 1);
 constexpr int KERNEL_SQUARE = Kx * Ky;
 
-// Sequential CNN implementation
-// input: Ni * NyPAD * NxPAD
+// CUDA CONV implementation
+// input: BatchSize * Ni * NyPAD * NxPAD
 // weight: Nn * Ni * Ky * Kx
-// output: Nn * NySCL * NxSCL
+// output: BatchSize * Nn * NySCL * NxSCL
 __global__ void conv_gpu(const float* input, const float* weight, float* output) {
     __shared__ float weight_blocked[BLOCK_CHANNEL][Kx][Ky];
     __shared__ float input_blocked[BLOCK_CHANNEL][BLOCK_IN_X][BLOCK_IN_X];
@@ -74,60 +72,86 @@ __global__ void conv_gpu(const float* input, const float* weight, float* output)
     int row = blockIdx.y * BLOCKSIZEY;
     int col = blockIdx.x * BLOCKSIZEX;
 
-    // set bias
-    #pragma unroll
-    for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
-        output_thread[k - kernalOffset] = 0.0f;
+    for(int b = 0; b < BatchSize; ++b) {
+      // set bias
+      #pragma unroll
+      for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
+          output_thread[k - kernalOffset] = 0.0f;
+      }
+
+      for(int ni = 0; ni < Nn; ni += BLOCK_CHANNEL) {
+
+          /* Step1. load input to shared memory */
+          int x, y;
+          #pragma unroll
+          for(int i = 0; i < BLOCK_CHANNEL; ++i) {
+              #pragma unroll
+              for (int offset = ty*BLOCKSIZEX + tx; offset < BLOCK_IN_X * BLOCK_IN_Y; offset += BLOCKSIZEX*BLOCKSIZEY) {
+                  x = offset % BLOCK_IN_X;
+                  y = offset / BLOCK_IN_X;
+                  input_blocked[i][y][x] = input(b, ni + i, row + y, col + x);
+              }
+          }
+
+          for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
+              /* Step2. load weight to shared memory */
+              #pragma unroll
+              for(int offset = ty*BLOCKSIZEX + tx; offset < KERNEL_SQUARE * BLOCK_CHANNEL; offset += BLOCKSIZEX*BLOCKSIZEY) {
+                  int cz = offset / KERNEL_SQUARE;
+                  int cz_off = offset % KERNEL_SQUARE;
+                  int cx = cz_off % Kx;
+                  int cy = cz_off / Kx;
+                  weight_blocked[cz][cy][cx] = weight(k, ni + cz, cy, cx);
+              }
+              __syncthreads();
+
+              /* Step3. Computation */
+              for (int kk = 0; kk < BLOCK_CHANNEL; kk++) {
+                  for (int ky = 0; ky < Ky; ky++) {
+                      for (int kx = 0; kx < Kx; kx++) {
+                          output_thread[k - kernalOffset] += input_blocked[kk][ty+ky][tx+kx] * weight_blocked[kk][ky][kx];
+                      }
+                  }
+              }
+              __syncthreads();
+          }
+      }
+
+      // Relu
+      for (int k = 0; k < KERNAL_COUNT; k++) {
+          output(b, kernalOffset + k, row + ty, col + tx) = max(0.0f, output_thread[k]);
+      }
     }
+}
 
-    for(int ni = 0; ni < Nn; ni += BLOCK_CHANNEL) {
+// CUDA CONV implementation
+// input: BatchSize * Ni * NyPAD * NxPAD
+// weight: Nn * Ni * Ky * Kx
+// output: BatchSize * Nn * NySCL * NxSCL
+__global__ void conv_naive(const float* input, const float* weight, float* output) {
+    int tx = threadIdx.x + blockIdx.x * BLOCKSIZEX;
+    int ty = threadIdx.y + blockIdx.y * BLOCKSIZEY;
+    int kernalOffset = blockIdx.z * KERNAL_COUNT;
 
-        /* Step1. load input to shared memory */
-        int x, y;
-        #pragma unroll
-        for(int i = 0; i < BLOCK_CHANNEL; ++i) {
-            #pragma unroll
-            for (int offset = ty*BLOCKSIZEX + tx; offset < BLOCK_IN_X * BLOCK_IN_Y; offset += BLOCKSIZEX*BLOCKSIZEY) {
-                x = offset % BLOCK_IN_X;
-                y = offset / BLOCK_IN_X;
-                input_blocked[i][y][x] = input(ni + i, row + y, col + x);
-            }
-        }
-
-        for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
-            /* Step2. load weight to shared memory */
-            #pragma unroll
-            for(int offset = ty*BLOCKSIZEX + tx; offset < KERNEL_SQUARE * BLOCK_CHANNEL; offset += BLOCKSIZEX*BLOCKSIZEY) {
-                int cz = offset / KERNEL_SQUARE;
-                int cz_off = offset % KERNEL_SQUARE;
-                int cx = cz_off % Kx;
-                int cy = cz_off / Kx;
-                weight_blocked[cz][cy][cx] = weight(k, ni + cz, cy, cx);
-            }
-            __syncthreads();
-
-            /* Step3. Computation */
-            for (int kk = 0; kk < BLOCK_CHANNEL; kk++) {
-                for (int ky = 0; ky < Ky; ky++) {
-                    for (int kx = 0; kx < Kx; kx++) {
-                        output_thread[k - kernalOffset] += input_blocked[kk][ty+ky][tx+kx] * weight_blocked[kk][ky][kx];
-                    }
+    for(int b = 0; b < BatchSize; ++b) {
+        for (int nn = kernalOffset; nn < kernalOffset + KERNAL_COUNT; nn++) {
+          float sum = 0.0f;
+          for(int ni = 0; ni < Nn; ni++) {
+            for (int ky = 0; ky < Ky; ky++) {
+                for (int kx = 0; kx < Kx; kx++) {
+                  sum += input(b, ni, ty+ky, tx+kx) * weight(nn, ni, ky, kx);
                 }
             }
-            __syncthreads();
-        }
-    }
-
-    // Relu
-    for (int k = 0; k < KERNAL_COUNT; k++) {
-        output(kernalOffset + k, row + ty, col + tx) = max(0.0f, output_thread[k]);
+          }
+          output(b, nn, ty, tx) = max(0.0f, sum);
+      }
     }
 }
 
 int main() {
-  const uint64_t float_calculation_num = 2*static_cast<uint64_t>(Nn)*Nx*Ny*Ni*Kx*Ky;
-  auto input_length = Ni * NyPAD * NxPAD; auto input_size = input_length * sizeof(float);
-  auto output_length = Nn * NySCL * NxSCL; auto output_size = output_length * sizeof(float);
+  const uint64_t float_calculation_num = 2*static_cast<uint64_t>(BatchSize)*Nn*Nx*Ny*Ni*Kx*Ky;
+  auto input_length = BatchSize * Ni * NyPAD * NxPAD; auto input_size = input_length * sizeof(float);
+  auto output_length = BatchSize * Nn * NySCL * NxSCL; auto output_size = output_length * sizeof(float);
   auto weight_length = Nn * Ni * Ky * Kx; auto weight_size = weight_length * sizeof(float);
   float* input = static_cast<float*>(malloc(input_size));
   float* output = static_cast<float*>(malloc(output_size));
@@ -164,6 +188,20 @@ int main() {
   CUDA_CHECK(cudaDeviceSynchronize());
   std::chrono::duration<double> conv_gpu_duration = std::chrono::steady_clock::now() - sta;
   print_performance_result(float_calculation_num, conv_gpu_duration, "CONV CUDA");
+
+  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
+  if (IsDiffMatrix(cuda_output, output, output_length)) {
+    clog << "FAIL" << endl;
+  } else {
+    clog << "PASS" << endl;
+  }
+
+  /******************/
+  sta = std::chrono::steady_clock::now();
+  conv_naive<<<grid, block>>>(g_input, g_weight, g_output);
+  CUDA_CHECK(cudaDeviceSynchronize());
+  std::chrono::duration<double> conv_naive_duration = std::chrono::steady_clock::now() - sta;
+  print_performance_result(float_calculation_num, conv_naive_duration, "CONV NAIVE");
 
   cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
   if (IsDiffMatrix(cuda_output, output, output_length)) {

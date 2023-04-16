@@ -1,6 +1,9 @@
 #pragma once
 
 /******** input/output size ***********/
+#ifndef BatchSize
+    #define BatchSize 1
+#endif
 // Nx: Width, Ny: Height
 #ifndef Nx
     #define Nx 224
@@ -42,5 +45,7 @@ constexpr int NxSCL = (Nx/Sx);
     #define GRIDDIMZ 64
 #endif
 
-#define BLOCKSIZEZ 1
+#ifndef BLOCKSIZEZ
+    #define BLOCKSIZEZ 1
+#endif
 /******** CUDA params end ***********/
