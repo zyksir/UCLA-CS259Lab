@@ -3,10 +3,11 @@
 #include <iostream>
 #include <random>
 #include <chrono>
+#include <cassert>
 #include <stdexcept>
 #include <cuda_runtime.h>
 
-#include "lib/utils.h"
+#include "lib/test.hpp"
 #include "lib/macros.cuh"
 
 using std::clog;
@@ -21,7 +22,7 @@ using std::max;
 // input: BatchSize * Ni * NyPAD * NxPAD
 // weight: Nn * Ni * Ky * Kx
 // output: BatchSize * Nn * NySCL * NxSCL
-void ConvSequential(const float *input,
+void conv_seq(const float *input,
     const float *weight,
     float *output) {
 
@@ -50,79 +51,9 @@ void ConvSequential(const float *input,
 }
 
 // kernal number that each thread need to deal with
-constexpr int KERNAL_COUNT = (Nn / GRIDDIMZ / BLOCKSIZEZ);
 constexpr int BLOCK_IN_X = (BLOCKSIZEX + Kx - 1);
 constexpr int BLOCK_IN_Y = (BLOCKSIZEY + Ky - 1);
-constexpr int KERNEL_SQUARE = Kx * Ky;
-
-// CUDA CONV implementation
-// input: BatchSize * Ni * NyPAD * NxPAD
-// weight: Nn * Ni * Ky * Kx
-// output: BatchSize * Nn * NySCL * NxSCL
-__global__ void conv_gpu(const float* input, const float* weight, float* output) {
-    __shared__ float weight_blocked[BLOCK_CHANNEL][Kx][Ky];
-    __shared__ float input_blocked[BLOCK_CHANNEL][BLOCK_IN_X][BLOCK_IN_X];
-    float output_thread[KERNAL_COUNT];
-
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
-
-    int kernalOffset = blockIdx.z * KERNAL_COUNT;
-
-    int row = blockIdx.y * BLOCKSIZEY;
-    int col = blockIdx.x * BLOCKSIZEX;
-
-    for(int b = 0; b < BatchSize; ++b) {
-      // set bias
-      #pragma unroll
-      for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
-          output_thread[k - kernalOffset] = 0.0f;
-      }
-
-      for(int ni = 0; ni < Nn; ni += BLOCK_CHANNEL) {
-
-          /* Step1. load input to shared memory */
-          int x, y;
-          #pragma unroll
-          for(int i = 0; i < BLOCK_CHANNEL; ++i) {
-              #pragma unroll
-              for (int offset = ty*BLOCKSIZEX + tx; offset < BLOCK_IN_X * BLOCK_IN_Y; offset += BLOCKSIZEX*BLOCKSIZEY) {
-                  x = offset % BLOCK_IN_X;
-                  y = offset / BLOCK_IN_X;
-                  input_blocked[i][y][x] = input(b, ni + i, row + y, col + x);
-              }
-          }
-
-          for (int k = kernalOffset; k < kernalOffset + KERNAL_COUNT; k++) {
-              /* Step2. load weight to shared memory */
-              #pragma unroll
-              for(int offset = ty*BLOCKSIZEX + tx; offset < KERNEL_SQUARE * BLOCK_CHANNEL; offset += BLOCKSIZEX*BLOCKSIZEY) {
-                  int cz = offset / KERNEL_SQUARE;
-                  int cz_off = offset % KERNEL_SQUARE;
-                  int cx = cz_off % Kx;
-                  int cy = cz_off / Kx;
-                  weight_blocked[cz][cy][cx] = weight(k, ni + cz, cy, cx);
-              }
-              __syncthreads();
-
-              /* Step3. Computation */
-              for (int kk = 0; kk < BLOCK_CHANNEL; kk++) {
-                  for (int ky = 0; ky < Ky; ky++) {
-                      for (int kx = 0; kx < Kx; kx++) {
-                          output_thread[k - kernalOffset] += input_blocked[kk][ty+ky][tx+kx] * weight_blocked[kk][ky][kx];
-                      }
-                  }
-              }
-              __syncthreads();
-          }
-      }
-
-      // Relu
-      for (int k = 0; k < KERNAL_COUNT; k++) {
-          output(b, kernalOffset + k, row + ty, col + tx) = max(0.0f, output_thread[k]);
-      }
-    }
-}
+constexpr int BLOCK_IN_SQUARE = BLOCK_IN_X * BLOCK_IN_Y;
 
 // CUDA CONV implementation
 // input: BatchSize * Ni * NyPAD * NxPAD
@@ -131,82 +62,195 @@ __global__ void conv_gpu(const float* input, const float* weight, float* output)
 __global__ void conv_naive(const float* input, const float* weight, float* output) {
     int tx = threadIdx.x + blockIdx.x * BLOCKSIZEX;
     int ty = threadIdx.y + blockIdx.y * BLOCKSIZEY;
-    int kernalOffset = blockIdx.z * KERNAL_COUNT;
+    int nn = blockIdx.z;
 
     for(int b = 0; b < BatchSize; ++b) {
-        for (int nn = kernalOffset; nn < kernalOffset + KERNAL_COUNT; nn++) {
-          float sum = 0.0f;
-          for(int ni = 0; ni < Nn; ni++) {
+      float sum = 0.0f;
+      for(int ni = 0; ni < Nn; ni++) {
+        for (int ky = 0; ky < Ky; ky++) {
+            for (int kx = 0; kx < Kx; kx++) {
+              sum += input(b, ni, ty+ky, tx+kx) * weight(nn, ni, ky, kx);
+            }
+        }
+      }
+      output(b, nn, ty, tx) = max(0.0f, sum);
+    }
+}
+
+// CUDA CONV implementation
+// input: BatchSize * Ni * NyPAD * NxPAD
+// weight: Nn * Ni * Ky * Kx
+// output: BatchSize * Nn * NySCL * NxSCL
+constexpr int KERNEL_SQUARE = Kx * Ky;
+__global__ void conv_naive_shared(const float* input, const float* weight, float* output) {
+    __shared__ float weight_blocked[BLOCK_CHANNEL][Kx][Ky];
+    __shared__ float input_blocked[BLOCK_CHANNEL][BLOCK_IN_X][BLOCK_IN_X];
+    int block_size = blockDim.x*blockDim.y;
+
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+
+    int col = blockIdx.x * blockDim.x;
+    int row = blockIdx.y * blockDim.y;
+    int nn = blockIdx.z;
+
+    for(int b = 0; b < BatchSize; ++b) {
+      float sum = 0.0f;
+
+      for(int ni = 0; ni < Ni; ni += BLOCK_CHANNEL) {
+        /* Step1. load input to shared memory */
+        for(int offset=ty*blockDim.x+tx; offset < BLOCK_CHANNEL*BLOCK_IN_SQUARE; offset += block_size) {
+          int cz = offset / BLOCK_IN_SQUARE;
+          int cz_off = offset % BLOCK_IN_SQUARE;
+          int cx = cz_off % BLOCK_IN_X;
+          int cy = cz_off / BLOCK_IN_X;
+          input_blocked[cz][cy][cx] = input(b, ni + cz, row + cy, col + cx);
+        }
+
+        /* Step2. load weight to shared memory */
+        for(int offset=ty*blockDim.x+tx; offset < BLOCK_CHANNEL*KERNEL_SQUARE; offset += block_size) {
+            int cz = offset / KERNEL_SQUARE;
+            int cz_off = offset % KERNEL_SQUARE;
+            int cx = cz_off % Kx;
+            int cy = cz_off / Kx;
+            weight_blocked[cz][cy][cx] = weight(nn, ni + cz, cy, cx);
+        }
+        __syncthreads();
+
+        /* Step3. Computation */
+        for (int kk = 0; kk < BLOCK_CHANNEL; kk++) {
             for (int ky = 0; ky < Ky; ky++) {
                 for (int kx = 0; kx < Kx; kx++) {
-                  sum += input(b, ni, ty+ky, tx+kx) * weight(nn, ni, ky, kx);
+                    sum += input_blocked[kk][ty+ky][tx+kx] * weight_blocked[kk][ky][kx];
+                    // sum += input_blocked[kk][ty+ky][tx+kx] * weight(nn, ni + kk, ky, kx);
                 }
             }
-          }
-          output(b, nn, ty, tx) = max(0.0f, sum);
+        }
+        __syncthreads();
       }
+
+      // Relu
+      output(b, nn, row + ty, col + tx) = max(0.0f, sum);
     }
+}
+
+void conv_naive_gridblock(dim3 &grid, dim3 &block) {
+  assert(Nx % BLOCKSIZEX == 0 && Ny % BLOCKSIZEY == 0);
+  int GRIDDIMX = Nx / BLOCKSIZEX;
+  int GRIDDIMY = Ny / BLOCKSIZEY;
+
+  block = dim3(BLOCKSIZEX, BLOCKSIZEY, 1);
+  grid = dim3(GRIDDIMX, GRIDDIMY, Nn);
+}
+
+#define channel_input(cinput, b, ni, h, w)    cinput[(((b)*NyPAD + (h))*NxPAD + (w))*Ni + (ni)]
+#define channel_output(coutput, b, nn, h, w)  coutput[(((b)*NySCL + (h))*NxSCL + (w))*Nn + (nn)]
+#define channel_weight(cweight, nn, ni, p, q) cweight[(((p)*Kx + (q))*Ni + (ni))*Nn + (nn)]
+
+// CUDA CONV implementation
+// input: BatchSize * NyPAD * NxPAD * Ni
+// weight: Ky * Kx * Ni * Nn
+// output: BatchSize * NySCL * NxSCL * Nn
+__global__ void conv_channel(const float* cinput, const float* cweight, float* coutput) {
+    // assume blockDim.x == 1 and blockDim.y == 1
+    int tx = blockIdx.z;
+    int ty = blockIdx.y;
+    int nn = blockIdx.x * blockDim.x + threadIdx.x;
+
+    for(int b = 0; b < BatchSize; ++b) {
+      float sum = 0.0f;
+      for (int ky = 0; ky < Ky; ky++) {
+        for (int kx = 0; kx < Kx; kx++) {
+          for(int ni = 0; ni < Ni; ni++) {
+            sum += channel_input(cinput, b, ni, ty+ky, tx+kx) * channel_weight(cweight, nn, ni, ky, kx);
+          }
+        }
+      }
+      channel_output(coutput, b, nn, ty, tx) = max(0.0f, sum);
+    }
+}
+
+__global__ void conv_channel_shared(const float* cinput, const float* cweight, float* coutput) {
+    // assume blockDim.z == 1 and blockDim.y == 1
+    int tx = blockIdx.z;
+    int ty = blockIdx.y;
+    int nn = blockIdx.x * blockDim.x + threadIdx.x;
+    const int blocksize = blockDim.x;
+
+    __shared__ float tmp_input[Ky][Kx][Ni];
+
+    for(int b = 0; b < BatchSize; ++b) {
+      for(int offset=threadIdx.x; offset<Ky*Kx*Ni; offset+=blocksize) {
+        int ky = offset / (Kx*Ni);
+        int ky_off = offset % (Kx*Ni);
+        int kx = ky_off / Ni;
+        int ni = ky_off % Ni;
+        tmp_input[ky][kx][ni] = channel_input(cinput, b, ni, ty+ky, tx+kx);
+      }
+      __syncthreads();
+
+      float sum = 0.0f;
+      for (int ky = 0; ky < Ky; ky++) {
+        for (int kx = 0; kx < Kx; kx++) {
+          for(int ni = 0; ni < Ni; ni++) {
+            // sum += tmp_input[ky][kx][ni] * tmp_weight[ky][kx][ni];
+            sum += tmp_input[ky][kx][ni] * channel_weight(cweight, nn, ni, ky, kx);
+          }
+        }
+      }
+      channel_output(coutput, b, nn, ty, tx) = max(0.0f, sum);
+      __syncthreads();
+    }
+}
+
+void conv_channel_gridblock(dim3 &grid, dim3 &block) {
+	assert(Nn % BLOCKSIZEZ == 0);
+	int GRIDDIMZ = Nn / BLOCKSIZEZ;
+
+	block = dim3(BLOCKSIZEZ, 1, 1);
+	grid = dim3(GRIDDIMZ, Ny, Nx);
 }
 
 int main() {
   const uint64_t float_calculation_num = 2*static_cast<uint64_t>(BatchSize)*Nn*Nx*Ny*Ni*Kx*Ky;
-  auto input_length = BatchSize * Ni * NyPAD * NxPAD; auto input_size = input_length * sizeof(float);
-  auto output_length = BatchSize * Nn * NySCL * NxSCL; auto output_size = output_length * sizeof(float);
-  auto weight_length = Nn * Ni * Ky * Kx; auto weight_size = weight_length * sizeof(float);
-  float* input = static_cast<float*>(malloc(input_size));
-  float* output = static_cast<float*>(malloc(output_size));
-  float* weight = static_cast<float*>(malloc(weight_size));
-  auto sta = std::chrono::steady_clock::now();
-  GenerateRandomMatrix(input, input_length);
-  GenerateRandomMatrix(weight, weight_length);
-  std::chrono::duration<double> rand_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[Generate Random Matrix]\tTimeCost:" << rand_duration.count() << "ns" << std::endl;
+  auto input_length = BatchSize * Ni * NyPAD * NxPAD;
+  auto output_length = BatchSize * Nn * NySCL * NxSCL;
+  auto weight_length = Nn * Ni * Ky * Kx;
+  auto conv_test = Test<float, decltype(conv_seq)>(input_length, output_length, weight_length, float_calculation_num, "CONV ");
+  conv_test.run_seq(conv_seq);
+  // conv_test.test_cuda(conv_block, conv_block_gridblock, "CUDA SHARED");
+  conv_test.test_cuda(conv_naive, conv_naive_gridblock, "CUDA NAIVE");
+  conv_test.test_cuda(conv_naive_shared, conv_naive_gridblock, "CUDA SHARED");
 
-  sta = std::chrono::steady_clock::now();
-  ConvSequential(input, weight, output);
-  std::chrono::duration<double> conv_seq_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, conv_seq_duration, "CONV SEQ");
-
-  float* cuda_output = static_cast<float*>(malloc(output_size));
-  float* g_input, *g_weight, *g_output;
-  cudaMalloc((float**)&g_input, input_size);
-  cudaMalloc((float**)&g_weight, weight_size);
-  cudaMalloc((float**)&g_output, output_size);
-  cudaMemcpy(g_input, input, input_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(g_weight, weight, weight_size, cudaMemcpyHostToDevice);
-
-  constexpr int GRIDDIMX = (Nx / BLOCKSIZEX);
-  constexpr int GRIDDIMY = (Ny / BLOCKSIZEY);
-  auto block = dim3(BLOCKSIZEX, BLOCKSIZEY, BLOCKSIZEZ);
-  auto grid = dim3(GRIDDIMX, GRIDDIMY, GRIDDIMZ);
-  std::clog << "Using thread block dims: " << block.x << ' ' << block.y << ' ' << block.z << '\n';
-  std::clog << "Using grid dims: " << grid.x << ' ' << grid.y << ' ' << grid.z << '\n';
-  cudaSetDevice(0);
-
-  sta = std::chrono::steady_clock::now();
-  conv_gpu<<<grid, block>>>(g_input, g_weight, g_output);
-  CUDA_CHECK(cudaDeviceSynchronize());
-  std::chrono::duration<double> conv_gpu_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, conv_gpu_duration, "CONV CUDA");
-
-  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
-  if (IsDiffMatrix(cuda_output, output, output_length)) {
-    clog << "FAIL" << endl;
-  } else {
-    clog << "PASS" << endl;
-  }
-
-  /******************/
-  sta = std::chrono::steady_clock::now();
-  conv_naive<<<grid, block>>>(g_input, g_weight, g_output);
-  CUDA_CHECK(cudaDeviceSynchronize());
-  std::chrono::duration<double> conv_naive_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, conv_naive_duration, "CONV NAIVE");
-
-  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
-  if (IsDiffMatrix(cuda_output, output, output_length)) {
-    clog << "FAIL" << endl;
-  } else {
-    clog << "PASS" << endl;
-  }
+  auto reformat_input = [](const float* input) {
+    float* cinput = static_cast<float*>(malloc(BatchSize * Ni * NyPAD * NxPAD * sizeof(float)));
+    for (int b = 0; b < BatchSize; b ++)
+      for (int ni = 0; ni < Ni; ni ++)
+        for (int h = 0; h < NyPAD; h ++)
+          for (int w = 0; w < NxPAD; w ++)
+            channel_input(cinput, b, ni, h, w) = input(b, ni, h, w);
+    return cinput;
+  };
+  auto reformat_weight = [](const float* weight) {
+    float* cweight = static_cast<float*>(malloc(Nn * Ni * Ky * Kx * sizeof(float)));
+    for (int nn = 0; nn < Nn; nn ++)
+      for (int ni = 0; ni < Ni; ni ++)
+        for (int p = 0; p < Ky; p ++)
+          for (int q = 0; q < Kx; q ++)
+            channel_weight(cweight, nn, ni, p, q) = weight(nn, ni, p, q);
+    return cweight;
+  };
+  auto reformat_output = [](float* coutput) {
+    float* output = static_cast<float*>(malloc(BatchSize * Nn * NySCL * NxSCL * sizeof(float)));
+    for (int b = 0; b < BatchSize; b ++)
+      for (int nn = 0; nn < Nn; nn ++)
+        for (int h = 0; h < NySCL; h ++)
+          for (int w = 0; w < NxSCL; w ++)
+            output(b, nn, h, w) = channel_output(coutput, b, nn, h, w);
+    return output;
+  };
+  conv_test.test_cuda(conv_channel, conv_channel_gridblock, "CUDA CHANNEL", 
+    reformat_input, reformat_weight, reformat_output);
+  conv_test.test_cuda(conv_channel_shared, conv_channel_gridblock, "CUDA CHANNEL SHARED", 
+    reformat_input, reformat_weight, reformat_output);
 }

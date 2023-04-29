@@ -49,36 +49,40 @@ __global__ void gemm_cuda_naive(const float *input, const float *weight, float *
 // weight: Ni * Nn        -> Z * Y
 // output: BatchSize * Nn -> X * Y
 __global__ void gemm_cuda(const float *input, const float *weight, float *output) {
-
-  __shared__ float input_blocked[BLOCKSIZEX][BLOCKSIZEZ];
-	__shared__ float weight_blocked[BLOCKSIZEZ][BLOCKSIZEY];
-
-	int tx = threadIdx.x;
-  int ty = threadIdx.y;
-	int x_offset = blockIdx.x * BLOCKSIZEX;
-	int y_offset = blockIdx.y * BLOCKSIZEY;
+  __shared__ float input_blocked[BLOCKSIZEX*BLOCKSIZEZ];
+	int x = blockIdx.x * BLOCKSIZEX + threadIdx.x;
+	int y = blockIdx.y * BLOCKSIZEY + threadIdx.y;
 
   float sum = 0;
   for(int ni = 0; ni < Ni; ni += BLOCKSIZEZ) {
-    #pragma unroll
-    for(int z = tx; z < BLOCKSIZEZ; z+=BLOCKSIZEX) {
-      weight_blocked[z][ty] = weight(z+ni, ty+y_offset);
-    }
-    #pragma unroll
-    for(int z = ty; z < BLOCKSIZEZ; z+=BLOCKSIZEY) {
-      input_blocked[tx][z] = input(tx+x_offset, z+ni);
-    }
+    for(int z = threadIdx.y; z < BLOCKSIZEZ; z+=blockDim.y)
+      input_blocked[threadIdx.x + z*BLOCKSIZEX] = input(x, z+ni);
     __syncthreads();
 
-    #pragma unroll
-    for(int z = 0; z < BLOCKSIZEZ; ++z) {
-      sum += input_blocked[tx][z] * weight_blocked[z][ty];
-    }
+    for(int z = 0; z < BLOCKSIZEZ; ++z)
+      sum += input_blocked[threadIdx.x + z*BLOCKSIZEX] * weight(z+ni, y);
     __syncthreads();
-
   }
-  output(tx+x_offset, ty+y_offset) = sum;
+  output(x, y) = sum;
 }
+// __global__ void gemm_cuda(const float *input, const float *weight, float *output) {
+//   __shared__ float tmp_input  [BLOCKSIZEX * BLOCKSIZEZ];
+//   int thread_x = blockIdx.x * BLOCKSIZEX + threadIdx.x;
+//   int thread_y = blockIdx.y * BLOCKSIZEY + threadIdx.y;
+//   float sum = 0;  //important, without costing time to load
+
+//   for (int z = 0; z < Ni; z += BLOCKSIZEZ) {
+//     for (int i = threadIdx.y; i < BLOCKSIZEZ; i += blockDim.y)
+//       tmp_input[threadIdx.x + i * BLOCKSIZEX] = input(thread_x, z + i);
+//     __syncthreads();
+
+//     for(int i = 0; i < BLOCKSIZEZ; i++){
+//       sum += tmp_input[threadIdx.x + i * BLOCKSIZEX] * weight(z + i, thread_y);
+//     }
+//     __syncthreads();
+//   }
+//   output(thread_x,thread_y) = sum;
+// }
 
 int main() {
   const int64_t float_calculation_num = 2*static_cast<uint64_t>(BatchSize)*Nn*Ni;

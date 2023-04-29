@@ -40,12 +40,15 @@ constexpr int NxSCL = (Nx/Sx);
     #define BLOCKSIZEY 16   
 #endif
 
-#ifndef BLOCK_CHANNEL
-    #define BLOCK_CHANNEL 4
-    #define GRIDDIMZ 64
-#endif
-
 #ifndef BLOCKSIZEZ
     #define BLOCKSIZEZ 1
+#endif
+
+#ifndef BLOCK_CHANNEL
+    #define BLOCK_CHANNEL 8
+#endif
+
+#ifndef BLOCK_BATCH
+    #define BLOCK_BATCH 2
 #endif
 /******** CUDA params end ***********/
