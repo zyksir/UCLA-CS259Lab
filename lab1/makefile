@@ -16,10 +16,10 @@ fc2: fc.cu $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=25088 -DNn=4096
 
 gemm1: gemm.cu $(SRCS)
-	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=4096 -DNn=1024 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=4096 -DNn=1024 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16 -DBLOCK_CHANNEL=64
 
 gemm2: gemm.cu $(SRCS)
-	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=25088 -DNn=4096 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=25088 -DNn=4096 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16 -DBLOCK_CHANNEL=512
 
 all: fc1 fc2 conv1 conv2 gemm1 gemm2
 

@@ -2,10 +2,11 @@
 #include <cuda.h>
 #include <iostream>
 #include <random>
+#include <cassert>
 #include <stdexcept>
 #include <cuda_runtime.h>
 
-#include "lib/utils.h"
+#include "lib/test.hpp"
 #include "lib/macros.cuh"
 
 using std::max;
@@ -34,7 +35,7 @@ void gemm_seq(const float *input, const float *weight, float *output) {
 // input: BatchSize * Ni
 // weight: Ni * Nn
 // output: BatchSize * Nn
-__global__ void gemm_cuda_naive(const float *input, const float *weight, float *output) {
+__global__ void gemm_naive(const float *input, const float *weight, float *output) {
  
   int b = threadIdx.x + blockIdx.x * BLOCKSIZEX;
   int nn = threadIdx.y + blockIdx.y * BLOCKSIZEY;
@@ -48,7 +49,7 @@ __global__ void gemm_cuda_naive(const float *input, const float *weight, float *
 // input: BatchSize * Ni  -> X * Z
 // weight: Ni * Nn        -> Z * Y
 // output: BatchSize * Nn -> X * Y
-__global__ void gemm_cuda(const float *input, const float *weight, float *output) {
+__global__ void gemm_naive_shared(const float *input, const float *weight, float *output) {
   __shared__ float input_blocked[BLOCKSIZEX*BLOCKSIZEZ];
 	int x = blockIdx.x * BLOCKSIZEX + threadIdx.x;
 	int y = blockIdx.y * BLOCKSIZEY + threadIdx.y;
@@ -65,87 +66,100 @@ __global__ void gemm_cuda(const float *input, const float *weight, float *output
   }
   output(x, y) = sum;
 }
-// __global__ void gemm_cuda(const float *input, const float *weight, float *output) {
-//   __shared__ float tmp_input  [BLOCKSIZEX * BLOCKSIZEZ];
-//   int thread_x = blockIdx.x * BLOCKSIZEX + threadIdx.x;
-//   int thread_y = blockIdx.y * BLOCKSIZEY + threadIdx.y;
-//   float sum = 0;  //important, without costing time to load
 
-//   for (int z = 0; z < Ni; z += BLOCKSIZEZ) {
-//     for (int i = threadIdx.y; i < BLOCKSIZEZ; i += blockDim.y)
-//       tmp_input[threadIdx.x + i * BLOCKSIZEX] = input(thread_x, z + i);
-//     __syncthreads();
+// input: BatchSize * Ni  -> X * Z
+// weight: Nn * Ni        -> Y * Z
+// output: BatchSize * Nn -> X * Y
+#define permute_weight(pweight, ni, nn) pweight[(nn)*Ni + (ni)]
+__global__ void gemm_naive_shared_permute(const float *input, const float *pweight, float *output) {
+  __shared__ float input_blocked[BLOCKSIZEX*BLOCKSIZEZ];
+	int b = blockIdx.x * blockDim.x + threadIdx.x;
+	int nn = blockIdx.y * blockDim.y + threadIdx.y;
 
-//     for(int i = 0; i < BLOCKSIZEZ; i++){
-//       sum += tmp_input[threadIdx.x + i * BLOCKSIZEX] * weight(z + i, thread_y);
-//     }
-//     __syncthreads();
-//   }
-//   output(thread_x,thread_y) = sum;
-// }
+  float sum = 0;
+  for(int ni = 0; ni < Ni; ni += BLOCKSIZEZ) {
+    for(int z = threadIdx.y; z < BLOCKSIZEZ; z+=blockDim.y)
+      input_blocked[threadIdx.x + z*BLOCKSIZEX] = input(b, z+ni);
+    __syncthreads();
+
+    for(int z = 0; z < BLOCKSIZEZ; ++z)
+      sum += input_blocked[threadIdx.x + z*BLOCKSIZEX] * permute_weight(pweight, z+ni, nn);
+    __syncthreads();
+  }
+  output(b, nn) = sum;
+}
+
+void gemm_naive_gridblock(dim3 &grid, dim3 &block) {
+  assert(BatchSize % BLOCKSIZEX == 0 && Nn % BLOCKSIZEY == 0);
+  constexpr int GRIDDIMX = (BatchSize / BLOCKSIZEX);
+  constexpr int GRIDDIMY = (Nn / BLOCKSIZEY);
+  block = dim3(BLOCKSIZEX, BLOCKSIZEY, 1);
+  grid = dim3(GRIDDIMX, GRIDDIMY, 1);
+}
+
+// input: BatchSize * Ni  -> X * Z
+// weight: Ni * Nn        -> Z * Y
+// output: BatchSize * Nn -> X * Y
+constexpr int blocksizez = 1024/BLOCKSIZEX/BLOCKSIZEY;
+constexpr int num_per_thread = Ni/blocksizez; 
+__global__ void gemm_aggr(const float *input, const float *weight, float *output) {
+  __shared__ float tmp_input[BLOCKSIZEX][blocksizez];
+  __shared__ float tmp_weight[blocksizez][BLOCKSIZEY];
+  __shared__ float sum;
+  float tmp_output;
+	int x = blockIdx.x * BLOCKSIZEX + threadIdx.x;
+	int y = blockIdx.y * BLOCKSIZEY + threadIdx.y;
+  int tz = threadIdx.z*num_per_thread;
+
+  tmp_output = 0.0f;
+  for(int z = tz; z < tz+num_per_thread; ++z) {
+    tmp_output += input(x, z) * weight(z, y);
+  }
+  atomicAdd(&sum, tmp_output);
+  __syncthreads();
+
+  if (tz == 0) {
+    output(x, y) = sum;
+  }
+
+  // float sum = 0;
+  // for(int ni = 0; ni < Ni; ni += BLOCKSIZEZ) {
+  //   for(int z = threadIdx.y; z < BLOCKSIZEZ; z+=blockDim.y)
+  //     tmp_input[threadIdx.x + z*BLOCKSIZEX] = input(x, z+ni);
+  //   __syncthreads();
+
+  //   for(int z = 0; z < BLOCKSIZEZ; ++z)
+  //     sum += tmp_input[threadIdx.x + z*BLOCKSIZEX] * weight(z+ni, y);
+  //   __syncthreads();
+  // }
+
+}
+
+void gemm_aggr_gridblock(dim3 &grid, dim3 &block) {
+  assert(Ni % BLOCK_CHANNEL == 0);
+  block = dim3(BLOCKSIZEX, BLOCKSIZEY, blocksizez);
+  grid = dim3(BatchSize, Nn, 1);
+}
+
 
 int main() {
   const int64_t float_calculation_num = 2*static_cast<uint64_t>(BatchSize)*Nn*Ni;
-  auto input_length = BatchSize*Ni; auto input_size = input_length * sizeof(float);
-  auto output_length = BatchSize*Nn; auto output_size = output_length * sizeof(float);
-  auto weight_length = Ni * Nn; auto weight_size = weight_length * sizeof(float);
-  float* input = static_cast<float*>(malloc(input_size));
-  float* output = static_cast<float*>(malloc(output_size));
-  float* weight = static_cast<float*>(malloc(weight_size));
-  auto sta = std::chrono::steady_clock::now();
-  GenerateRandomMatrix(input, input_length);
-  GenerateRandomMatrix(weight, weight_length);
-  memset(output, 0, output_size);
-  std::chrono::duration<double> rand_duration = std::chrono::steady_clock::now() - sta;
-  clog << "[Generate Random Matrix]\tTimeCost:" << rand_duration.count() << "ns" << std::endl;
-
-  sta = std::chrono::steady_clock::now();
-  gemm_seq(input, weight, output);
-  std::chrono::duration<double> gemm_seq_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, gemm_seq_duration, "GEMM SEQ");
-
-  float* cuda_output = static_cast<float*>(malloc(output_size));
-  float* g_input, *g_weight, *g_output;
-  cudaMalloc((float**)&g_input, input_size);
-  cudaMalloc((float**)&g_weight, weight_size);
-  cudaMalloc((float**)&g_output, output_size);
-  cudaMemcpy(g_input, input, input_size, cudaMemcpyHostToDevice);
-  cudaMemcpy(g_weight, weight, weight_size, cudaMemcpyHostToDevice);
-  cudaMemset(g_output, 0, output_size);
-
-  constexpr int GRIDDIMX = (BatchSize / BLOCKSIZEX);
-  constexpr int GRIDDIMY = (Nn / BLOCKSIZEY);
-  auto block = dim3(BLOCKSIZEX, BLOCKSIZEY);
-  auto grid = dim3(GRIDDIMX, GRIDDIMY);
-  clog << "Using thread block dims: " << block.x << ' ' << block.y << '\n';
-  clog << "Using grid dims: " << grid.x << ' ' << grid.y << '\n';
-  cudaSetDevice(0);
-
-  sta = std::chrono::steady_clock::now();
-  gemm_cuda<<<grid, block>>>(g_input, g_weight, g_output);
-  CUDA_CHECK(cudaDeviceSynchronize());
-  std::chrono::duration<double> gemm_cuda_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, gemm_cuda_duration, "GEMM CUDA");
-
-  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
-  if (IsDiffMatrix(cuda_output, output, output_length)) {
-    clog << "FAIL" << endl;
-  } else {
-    clog << "PASS" << endl;
-  }
-
-  /*****/
-  cudaMemset(g_output, 0, output_size);
-  sta = std::chrono::steady_clock::now();
-  gemm_cuda_naive<<<grid, block>>>(g_input, g_weight, g_output);
-  CUDA_CHECK(cudaDeviceSynchronize());
-  std::chrono::duration<double> gemm_cuda_naive_duration = std::chrono::steady_clock::now() - sta;
-  print_performance_result(float_calculation_num, gemm_cuda_naive_duration, "GEMM CUDA NAIVE");
-
-  cudaMemcpy(cuda_output, g_output, output_size, cudaMemcpyDeviceToHost);
-  if (IsDiffMatrix(cuda_output, output, output_length)) {
-    clog << "FAIL" << endl;
-  } else {
-    clog << "PASS" << endl;
-  }
+  auto input_length = BatchSize*Ni;
+  auto output_length = BatchSize*Nn;
+  auto weight_length = Ni * Nn;
+  auto gemm_test = Test<float, decltype(gemm_seq)>(input_length, output_length, weight_length, float_calculation_num, "GEMM ");
+  gemm_test.run_seq(gemm_seq);
+  auto reformat_weight = [](const float* weight) {
+    float* pweight = static_cast<float*>(malloc(Nn * Ni * sizeof(float)));
+    for (int nn = 0; nn < Nn; nn ++)
+      for (int ni = 0; ni < Ni; ni ++)
+        permute_weight(pweight, ni, nn) = weight(ni, nn);
+    return pweight;
+  };
+  gemm_test.test_cuda(gemm_naive, gemm_naive_gridblock, "CUDA NAIVE");
+  gemm_test.test_cuda(gemm_naive_shared, gemm_naive_gridblock, "CUDA SHARED");
+  gemm_test.test_cuda(gemm_naive_shared_permute, gemm_naive_gridblock, "CUDA SHARED PERMUTE",
+    nullptr, reformat_weight, nullptr
+  );
+  gemm_test.test_cuda(gemm_aggr, gemm_aggr_gridblock, "CUDA AGGR");
 }
