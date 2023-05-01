@@ -9,19 +9,13 @@ conv1: conv.cu $(SRCS)
 conv2: conv.cu $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNx=14 -DNy=14 -DNi=512 -DNn=512 -DBatchSize=16 -DBLOCKSIZEX=14 -DBLOCKSIZEY=14 -DBLOCKSIZEZ=512
 
-fc1: fc.cu $(SRCS)
-	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=4096 -DNn=1024
-
-fc2: fc.cu $(SRCS)
-	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=25088 -DNn=4096
-
 gemm1: gemm.cu $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=4096 -DNn=1024 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16 -DBLOCK_CHANNEL=64
 
 gemm2: gemm.cu $(SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNi=25088 -DNn=4096 -DBatchSize=16 -DBLOCKSIZEZ=512 -DBLOCKSIZEY=64 -DBLOCKSIZEX=16 -DBLOCK_CHANNEL=512
 
-all: fc1 fc2 conv1 conv2 gemm1 gemm2
+all: conv1 conv2 gemm1 gemm2
 
 clean:
-	$(RM) fc1 fc2 conv1 conv2 gemm1 gemm2
+	$(RM) conv1 conv2 gemm1 gemm2

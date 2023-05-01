@@ -8,9 +8,9 @@ using std::endl;
 template<typename T, typename KERNEL_FUNC>
 class Test {
     void print_performance_result(const duration<double>& duration, const string& name) {
-        uint64_t run_time_us = duration_cast<nanoseconds>(duration).count();
-        float gflops = float_calculation_num /(run_time_us * 1e9);
-        clog << "[" << kernel_name + name << "]\tGFLOPS:" << gflops << "gflops\tTimeCost:" << duration.count() << "ms" << std::endl;
+        uint64_t run_time_us = duration_cast<microseconds>(duration).count();
+        float gflops = float_calculation_num /(run_time_us * 1e3);
+        clog << "[" << kernel_name + name << "]\tGFLOPS:" << gflops << "gflops\tTimeCost:" << duration.count()*1e6 << "us" << std::endl;
     }
 
     bool is_diff_single_item(T a, T b) {
