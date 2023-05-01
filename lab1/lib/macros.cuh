@@ -51,4 +51,9 @@ constexpr int NxSCL = (Nx/Sx);
 #ifndef BLOCK_BATCH
     #define BLOCK_BATCH 2
 #endif
+
+#ifndef TILEX
+    #define TILEX 2
+    #define TILEY 2
+#endif
 /******** CUDA params end ***********/
