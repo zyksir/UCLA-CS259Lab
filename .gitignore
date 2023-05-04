@@ -4,3 +4,4 @@ fc1
 fc2
 gemm1
 gemm2
+*.prof

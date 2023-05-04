@@ -25,3 +25,7 @@ void gemm_coalescing(const float *A, const float *B, float *C, dim3 &grid, dim3 
     gemm_coalescing_kernel<BX, BY>
         <<<grid, block>>>(A, B, C, N, K, M);
 }
+
+// for gemm2
+// GFLOPS: 306 -> 1394
+// dram_read_throughput: 40GB/s -> 163GB/s

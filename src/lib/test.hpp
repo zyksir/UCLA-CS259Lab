@@ -114,6 +114,8 @@ public:
 		cudaEventElapsedTime(&elapsed_ms, start, stop);
 		std::chrono::nanoseconds gpu_duration((uint64_t)(elapsed_ms * 1e6));
 		print_performance_result(gpu_duration, name);
+		cudaEventDestroy(start);
+		cudaEventDestroy(stop);
 
 		/**************************************
 		 *           Memory Cleanup           *
