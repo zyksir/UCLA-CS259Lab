@@ -20,12 +20,10 @@ __global__ void conv_naive_kernel(const float* input, const float* weight, float
         for (int ky = 0; ky < Ky; ky++) {
             for (int kx = 0; kx < Kx; kx++) {
                 sum += Val4D(weight, nn, ni, ky, kx, Ni, Ky, Kx) * Val4D(input, b, ni, ty+ky, tx+kx, Ni, NyPAD, NxPAD);
-            //   sum += input(b, ni, ty+ky, tx+kx) * weight(nn, ni, ky, kx);
             }
         }
       }
       Val4D(output, b, nn, ty, tx, Nn, NySCL, NxSCL) = max(0.0f, sum);
-    //   output(b, nn, ty, tx) = max(0.0f, sum);
     }
 }
 

@@ -27,7 +27,6 @@ void conv_seq(const float *input,
             for(int ky = 0; ky < Ky; ++ky) {
               for(int kx = 0; kx < Kx; ++kx) {
                 sum += Val4D(weight, nn, ni, ky, kx, Ni, Ky, Kx) * Val4D(input, b, ni, ny+ky, nx+kx, Ni, NyPAD, NxPAD);
-                // sum += weight(nn, ni, ky, kx) * input(b, ni, ny+ky, nx+kx);
               }
             }
           }

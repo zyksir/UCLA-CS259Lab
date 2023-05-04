@@ -15,11 +15,10 @@ template<const uint B, const uint Ni, const uint Nn, const uint Nx, const uint N
 __global__ void conv_block_tiling_kernel(const float* input, const float* weight, float* output) {
     // assume blockDim.z == 1 and blockDim.y == 1
     int nn = blockIdx.x * blockDim.x + threadIdx.x;
-    int b = blockIdx.y; // blockIdx.y * blockDim.y + threadIdx.y;
+    int b = blockIdx.y * blockDim.y + threadIdx.y;
     int ty = blockIdx.z/BLOCKNUMY*TY;
     int tx = blockIdx.z%BLOCKNUMY*TX;
 
-    // __shared__ float tmp_input[BIY][BIX][TZ];
     float tmp_output[TY][TX] = {0.0f};
     for(int ni = 0; ni < Ni; ni++) {
       for (int ky = 0; ky < Ky; ky++) {
@@ -28,7 +27,6 @@ __global__ void conv_block_tiling_kernel(const float* input, const float* weight
           for(int y=0; y < TY; ++y) {
             for(int x=0; x < TX; ++x) {
               tmp_output[y][x] += Val4D(input, b, ty+y+ky, tx+x+kx, ni, NyPAD, NxPAD, Ni) * tmp_weight;
-              // tmp_output[y][x] += tmp_input[y+ky][x+kx][ni-bni] * tmp_weight;
             }
           }
         }
