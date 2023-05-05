@@ -13,6 +13,7 @@
 #include "kernels/conv_kernels.hpp"
 
 int main() {
+  const uint num_repeats = 1;
   CudaDeviceInfo();
   const uint64_t float_calculation_num = 2*static_cast<uint64_t>(BatchSize)*Nnn*Nxx*Nyy*Nii*Kxx*Kyy;
   constexpr int NyPAD = Nyy + Kyy - 1;
@@ -23,7 +24,7 @@ int main() {
   auto output_length = BatchSize * Nnn * NySCL * NxSCL;
   auto weight_length = Nnn * Nii * Kyy * Kxx;
   auto conv_test = Test<float, decltype(conv_naive<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 16, 16>)>
-    (input_length, output_length, weight_length, float_calculation_num, "CONV ", 1);
+    (input_length, output_length, weight_length, float_calculation_num, "CONV ", num_repeats);
   conv_test.run_seq(conv_seq<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy>);
   const uint BX = 32 > Nxx ? Nxx : 32;
   conv_test.test_cuda(conv_naive<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, BX, BX>, "CUDA NAIVE ");
@@ -61,6 +62,8 @@ int main() {
     reformat_input, reformat_weight, reformat_output);
   conv_test.test_cuda(conv_block_tiling<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 64, 14, 14>, "CUDA BLOCK TILING ",
     reformat_input, reformat_weight, reformat_output);
-  conv_test.test_cuda(conv_shared<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 64, 14, 14, 4>, "CUDA SHARED ",
+  conv_test.test_cuda(conv_shared<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 64, 14, 14, 16>, "CUDA SHARED ",
+    reformat_input, reformat_weight, reformat_output);
+  conv_test.test_cuda(conv_vectorize<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 64, 14, 14, 16>, "CUDA VECTORIZE ",
     reformat_input, reformat_weight, reformat_output);
 }

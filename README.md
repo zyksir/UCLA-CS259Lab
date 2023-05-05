@@ -23,6 +23,7 @@ ncu --set full ./vectorAdd
 # check stall reasons
 ncu --metrics "regex:.*smsp__pcsamp_warps_issue.*" ./vectorAdd
 
+
 # check which line of the code cause the illegal memory access
 cuda-memcheck ./conv
 # check race condition
