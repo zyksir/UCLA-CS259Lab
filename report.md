@@ -1,30 +1,22 @@
 # Optimization of GEMM & Conv
 
 ### Introduction
-- Overall Performance
-```txt
-[CONV1]: 
-[CONV SEQ]Pass  GFLOPS:1.44013gflops    TimeCost:4.11005e+07us
-[CONV CUDA NAIVE ]Pass  GFLOPS:1567.91gflops    TimeCost:37751.7us
-[CONV CUDA COALESCING ]Pass     GFLOPS:1721.19gflops    TimeCost:34389.9us
-[CONV CUDA BLOCK TILING ]Pass   GFLOPS:2058gflops       TimeCost:28761.6us
-[CONV CUDA SHARED ]Pass GFLOPS:5239.45gflops    TimeCost:11297.6us
-[GEMM2]: 
-[GEMM SEQ]Pass  GFLOPS:1.68717gflops    TimeCost:1.94902e+06us
-[GEMM CUDA NAIVE]Pass   GFLOPS:287.341gflops    TimeCost:11444.1us
-[GEMM CUDA coalescing]Pass      GFLOPS:1385.85gflops    TimeCost:2372.83us
-[GEMM CUDA NAIVE SHARED]Pass    GFLOPS:1846.76gflops    TimeCost:1780.69us
-[GEMM CUDA SHARED]Pass  GFLOPS:2286.74gflops    TimeCost:1438.04us
-[GEMM CUDA TILING]Pass  GFLOPS:2836.97gflops    TimeCost:1159.17us
-[GEMM CUDA VECTERIZE]Pass       GFLOPS:2459.12gflops    TimeCost:1337.26us
-```
+- Overall Performance(GFLOPS)
+
+| CONV               | 3\*3\*224\*224\*64\*64 | 3\*3\*14\*14\*512\*512 |
+| ------------------ | ---------------------- | ---------------------- |
+| SEQ                | 1.48                   | 1.48                   |
+| NAIVE              | 1563                   | 1220                   |
+| COALESCING         | 1681                   | 1050                    |
+| BLOCK TILING       | 2014                   | 1266                   |
+| SHARED             | 5249                   | 2935                   |
+| VECTORIZE & UNROLL | 8914                   | 4425                   |
+|                    |                        |                        |
 
 - Machince Architecture
-with `cd ~/cuda-samples && ./Samples/1_Utilities/deviceQuery/deviceQuery`, we can get some info
 ```python
-MemoryBandwidth = 651 * (1024 ** 3) #B/s
-MaxFLOPS = 13.8 * 1000 # GFLOPS
-NumSP = 5120
+MemoryBandwidth = 651 * (1024 ** 3) # 651 GB/s
+MaxFLOPS = 13.8 * 1000              # 13.8 TFLOPS
 MaxThreadPerSM = 2048
 MaxThreadPerBlock = 1024
 WarpSize = 32
@@ -32,36 +24,79 @@ L2CacheSize = 4718592 #Bytes
 alpha = 1000**(-3)
 DataTypeBytes = 4 # we use float
 # B, Kx, Ky, Nx, Ny, Ni, Nn = 16, 3, 3, 224, 224, 64, 64
+# B, Kx, Ky, Nx, Ny, Ni, Nn = 16, 3, 3, 14, 14, 512, 512
 ```
 
-## Naive Model
+## [Naive Kernel](./src/kernels/conv_01_naive.cuh)
+For the naive model, let's assume this is the ![img](./pics/naiveModel.png). In addition, assume every thing in an block is perfectly cached by L1 cache. These assumption means that we need to add a magic number beta to make our analysis accurate.
+- if L1 cache is large enough. Each block need to load from input B\*Ni\*NxPAD\*NyPAD times, load from weight Ni\*Kx\*Ky times, store to output B\*NxSCL\*NySCL. Each block need to do 2\*B\*NxSCL\*NySCL\*Ni\*Kx\*Ky times float op.
+- according to our result, we should set beta to 1/8. This constant means everything that we ignore for now, like memory uncoalesce, cache miss and shared memory.
+- This model is simple but predicts surprisingly good with different batchsize for naive kernel.
+- To erase the magic number beta=1/8, we analyze the behavior of the naive_kernel and decide to change the format of input and output. The code is [here](./src/kernels/conv_02_coalescing.cuh). We use the similar way to model this kernel. The good news is that now we can set beta=1. That bad news is that the estimation error is larger.
+
 ```python
-# Roofline model of naive way
-# For Conv, each block caculate a batchSize of items in output
-ConvOperationIntensity = 2*B*Ni*Kx*Ky/(B*Ni*Kx*Ky*2 + B) # 1 for conv1
-naiveRoofline = min(MaxFLOPS, ConvOperationIntensity*MemoryBandwidth*alpha)
+betaNaive = 1/8
+# for conv1, predict: 1521, actual: 1563
+# for conv2, predict: 1120, actual: 1220
+def naiveModel(B, Kx, Ky, Nx, Ny, Ni, Nn, beta):
+  NxSCL, NySCL, NxPAD, NyPAD = Nx, Ny, Nx+Kx-1, Ny+Ky-1
+  ConvOperationIntensity = 2*B*NxSCL*NySCL*Ni*Kx*Ky/(B*Ni*NxPAD*NyPAD + Ni*Kx*Ky + B*NxSCL*NySCL)/4
+  gflops = min(MaxFLOPS, ConvOperationIntensity*MemoryBandwidth*alpha*beta) 
+  return gflops
+
+# for conv1, predict: 1374, actual: 1681
+# for conv2, predict: 1394, actual: 1050
+def coalescModel(B, Kx, Ky, Nx, Ny, Ni, Nn, BZ, beta=1):
+  NxSCL, NySCL, NxPAD, NyPAD = Nx, Ny, Nx+Kx-1, Ny+Ky-1
+  ConvOperationIntensity = 2*BZ*Ni*Kx*Ky/(Ni*Kx*Ky + BZ*Ni*Kx*Ky + BZ)/4
+  gflops = min(MaxFLOPS, ConvOperationIntensity*MemoryBandwidth*alpha*beta) 
+  return gflops
 ```
 
-with running `ncu --set full` command, the bottleneck of both navie kernels is Memory.
-- The main problem with conv is that it only use 2.3/4 info per cache line from L1TEX to L2 . 
-- The Gemm mentions thread access 4 bytes per request but has 8.5 sectors per request per warp.(ps: optimal should be 4 sectors since each sector is 32 byte. 4*warpsize=4 sectors.) from L1TEX to L2 and global to L1TEX
-- In addition, `ncu` mentions the kernel is too small. This can be easily upgraded by increasing thread nums per block.
-
-## Memory Coalescing
-The answer is using memory coalescing. That is, the 
-- For Gemm, please refer to this image ![img](https://siboehm.com/assets/img/CUDA-MMM/Naive_kernel_improved_access.png). # 1 -> 2.5
-- For Conv, we can transfer NCHW format to NHWC format to get memory coalescing. # 2.3/4 -> 3/4
+## [Block Tiling Kernel](./src/kernels/conv_03_block_tiling.cuh)
+The main problem with the coalescing\_kernel is that the operation intensity is too low! Therefore, we introduce tiling to increase the performance.
+In addition, let's introduce more constraints:
+- some of the SP might be idle. Therefore, the computation limitation should take this into count.
+- There is L1 cache miss. The Size of L1 Cache is 128KB. [!img](./pics/V100Arch.png)
+- Each thread need to load from input Ni\*TXPAD\*TYPAD times, load from weight Ni\*Kx\*Ky times, store to output TX\*TY. Each block need to do 2\*Ni\*TX\*TY\*Kx\*Ky times float op.
 
 
-## Shared Model
-Before we get the naiveRoofline, we find the naive way of using shared memory cannot improve performance. After nvprof using `-m dram_read_throughput`, I find this is because the throughput doesn't increase. I think this is because the naive method has great locality if Strip is 1. Therefore, the cache locality of high and we can assume.
-after run `ncu --metrics "regex:.*smsp__pcsamp_warps_issue.*" ./conv1` to see the stall reasons. One of the top reasons are "Stall MIO Throttle".
+```python
+NumMP = 80
+L1Size = 128 * 1024
+# for conv1, predict: 13800, actual: 2014
+# for conv2, predict: 13800, actual: 1266
+def blocktilingModel(B, Kx, Ky, Nx, Ny, Ni, Nn, BZ=64, TX=14, TY=14):
+  TXPAD, TYPAD = TX+Kx-1, TY+Ky-1
+  numBLOCKS = Nn/BZ * B * Nx * Ny / TX / TY
+  MPRatio = min(numBLOCKS / NumMP, 1.0)
+  numBytesWeight = (Ni*Kx*Ky*BZ)*4
+  numBytesOutput = (BZ*TX*TY)*4
+  numBytesInput = (Ni*TXPAD*TYPAD)*4
+
+  ConvOperationIntensity = 2*BZ*Ni*Kx*Ky*TX*TY/(numBytesWeight + numBytesOutput + numBytesInput*(numBytesInput/L1Size + 1)) 
+  gflops = min(MaxFLOPS*MPRatio, ConvOperationIntensity*MemoryBandwidth*alpha) 
+  return gflops
+```
+
+
+## [Shared Model](./src/kernels/conv_05_vectorize.cuh)
+- Each Block first load to L2 Cache. Then load from L2 cache.
+```python
+L2Size = 6144 * 1024 # 6144 KB
+MemoryBandwidth = 2155 * (1024 ** 3) # 651 GB/s
+```
 
 
 ## Appendix
 1. useful commands 
 ```bash
+cd ~/cuda-samples && ./Samples/1_Utilities/deviceQuery/deviceQuery
+# generate performance report
 ncu --set full ./conv1 > ncu_conv1_report.prof
+# analyze stall reasons
+ncu --metrics "regex:.*smsp__pcsamp_warps_issue.*" ./conv1
+# see bank conflict
 nvprof -e shared_ld_bank_conflict,shared_st_bank_conflict --metrics shared_efficiency,shared_load_transactions_per_request ./conv1
 ```
 

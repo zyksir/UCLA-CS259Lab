@@ -1,5 +1,7 @@
 conv1
 conv2
+conv3
+conv4
 fc1
 fc2
 gemm1

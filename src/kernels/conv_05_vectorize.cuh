@@ -37,7 +37,9 @@ __global__ void conv_vectorize_kernel(const float* input, const float* weight, f
       }
       __syncthreads();
 
+      #pragma unroll
       for (int ky = 0; ky < Ky; ky++) {
+        #pragma unroll
         for (int kx = 0; kx < Kx; kx++) {
           for(int ni = bni; ni < bni+TZ; ni++) {
             float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn); ;//channel_weight(cweight, nn, ni, ky, kx);

@@ -26,7 +26,7 @@ int main() {
   auto conv_test = Test<float, decltype(conv_naive<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, 16, 16>)>
     (input_length, output_length, weight_length, float_calculation_num, "CONV ", num_repeats);
   conv_test.run_seq(conv_seq<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy>);
-  const uint BX = 32 > Nxx ? Nxx : 32;
+  constexpr uint BX = 32 > Nxx ? Nxx : 32;
   conv_test.test_cuda(conv_naive<BatchSize, Nii, Nnn, Nxx, Nyy, Kxx, Kyy, BX, BX>, "CUDA NAIVE ");
   auto reformat_input = [](const float* input) {
     float* cinput = static_cast<float*>(malloc(BatchSize * Nii * NyPAD * NxPAD * sizeof(float)));
