@@ -42,7 +42,7 @@ __global__ void conv_vectorize_kernel(const float* input, const float* weight, f
         #pragma unroll
         for (int kx = 0; kx < Kx; kx++) {
           for(int ni = bni; ni < bni+TZ; ni++) {
-            float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn); ;//channel_weight(cweight, nn, ni, ky, kx);
+            float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn);
             for(int y=0; y < TY; ++y) {
               for(int x=0; x < TX; ++x) {
                 tmp_output[y][x] += Val3D(inputs, ni-bni, y+ky, x+kx, BIY, BIX) * tmp_weight;

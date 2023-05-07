@@ -27,14 +27,14 @@ __global__ void conv_shared_kernel(const float* input, const float* weight, floa
         int y_off = offset % (BIX*TZ);
         int x = y_off / TZ;
         int ni = y_off % TZ;
-        tmp_input[y][x][ni] = Val4D(input, b, ty+y, tx+x, bni+ni, NyPAD, NxPAD, Ni);//channel_input(cinput, b, nii+ni, ty+ky, tx+kx);
+        tmp_input[y][x][ni] = Val4D(input, b, ty+y, tx+x, bni+ni, NyPAD, NxPAD, Ni);
       }
       __syncthreads();
 
       for (int ky = 0; ky < Ky; ky++) {
         for (int kx = 0; kx < Kx; kx++) {
           for(int ni = bni; ni < bni+TZ; ni++) {
-            float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn); ;//channel_weight(cweight, nn, ni, ky, kx);
+            float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn);
             for(int y=0; y < TY; ++y) {
               for(int x=0; x < TX; ++x) {
                 tmp_output[y][x] += tmp_input[y+ky][x+kx][ni-bni] * tmp_weight;

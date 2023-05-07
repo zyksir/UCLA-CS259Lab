@@ -23,7 +23,7 @@ __global__ void conv_block_tiling_kernel(const float* input, const float* weight
     for(int ni = 0; ni < Ni; ni++) {
       for (int ky = 0; ky < Ky; ky++) {
         for (int kx = 0; kx < Kx; kx++) {
-          float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn); ;
+          float tmp_weight = Val4D(weight, ky, kx, ni, nn, Kx, Ni, Nn);
           for(int y=0; y < TY; ++y) {
             for(int x=0; x < TX; ++x) {
               tmp_output[y][x] += Val4D(input, b, ty+y+ky, tx+x+kx, ni, NyPAD, NxPAD, Ni) * tmp_weight;
