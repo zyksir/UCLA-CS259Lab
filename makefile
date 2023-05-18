@@ -13,7 +13,7 @@ conv3: src/conv_runner.cu src/kernels/conv* $(LIBS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNxx=224 -DNyy=224 -DNii=64 -DNnn=64 -DBatchSize=1
 
 conv4: src/conv_runner.cu src/kernels/conv* $(LIBS)
-	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNxx=14 -DNyy=14 -DNii=512 -DNnn=512 -DBatchSize=1
+	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNxx=14 -DNyy=14 -DNii=512 -DNnn=2048 -DBatchSize=16
 
 gemm1: src/gemm_runner.cu src/kernels/gemm* $(LIBS)
 	$(CXX) $(CXXFLAGS) -o $@ $(filter %.cu %.a %.o %.cpp, $^) -DNii=4096 -DNnn=1024 -DBatchSize=16

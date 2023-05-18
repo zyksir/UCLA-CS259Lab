@@ -1,4 +1,4 @@
-# Optimization of GEMM & Conv
+# Performance Model for Conv
 
 ### Introduction
 - Overall Performance(GFLOPS)
@@ -7,86 +7,35 @@
 | ------------------ | ---------------------- | ---------------------- |
 | SEQ                | 1.48                   | 1.48                   |
 | NAIVE              | 1563                   | 1220                   |
-| COALESCING         | 1681                   | 1050                    |
+| COALESCING         | 1681                   | 1050                   |
 | BLOCK TILING       | 2014                   | 1266                   |
 | SHARED             | 5249                   | 2935                   |
 | VECTORIZE & UNROLL | 8914                   | 4425                   |
-|                    |                        |                        |
 
-- Machince Architecture
-```python
-MemoryBandwidth = 651 * (1024 ** 3) # 651 GB/s
-MaxFLOPS = 13.8 * 1000              # 13.8 TFLOPS
-MaxThreadPerSM = 2048
-MaxThreadPerBlock = 1024
-WarpSize = 32
-L2CacheSize = 4718592 #Bytes
-alpha = 1000**(-3)
-DataTypeBytes = 4 # we use float
-# B, Kx, Ky, Nx, Ny, Ni, Nn = 16, 3, 3, 224, 224, 64, 64
-# B, Kx, Ky, Nx, Ny, Ni, Nn = 16, 3, 3, 14, 14, 512, 512
-```
+### [quantitative roofline model](https://www.sciencedirect.com/science/article/pii/S0743731517301247)
 
-## [Naive Kernel](./src/kernels/conv_01_naive.cuh)
-For the naive model, let's assume this is the ![img](./pics/naiveModel.png). In addition, assume every thing in an block is perfectly cached by L1 cache. These assumption means that we need to add a magic number beta to make our analysis accurate.
-- if L1 cache is large enough. Each block need to load from input B\*Ni\*NxPAD\*NyPAD times, load from weight Ni\*Kx\*Ky times, store to output B\*NxSCL\*NySCL. Each block need to do 2\*B\*NxSCL\*NySCL\*Ni\*Kx\*Ky times float op.
-- according to our result, we should set beta to 1/8. This constant means everything that we ignore for now, like memory uncoalesce, cache miss and shared memory.
-- This model is simple but predicts surprisingly good with different batchsize for naive kernel.
-- To erase the magic number beta=1/8, we analyze the behavior of the naive_kernel and decide to change the format of input and output. The code is [here](./src/kernels/conv_02_coalescing.cuh). We use the similar way to model this kernel. The good news is that now we can set beta=1. That bad news is that the estimation error is larger.
+Their code is [here](https://github.com/ekondis/gpuroofperf-toolkit). We use their way to adjust peak compute throughput, while we introduce occupancy_ratio to adjust the model to predict kernel for small problems. 
 
-```python
-betaNaive = 1/8
-# for conv1, predict: 1521, actual: 1563
-# for conv2, predict: 1120, actual: 1220
-def naiveModel(B, Kx, Ky, Nx, Ny, Ni, Nn, beta):
-  NxSCL, NySCL, NxPAD, NyPAD = Nx, Ny, Nx+Kx-1, Ny+Ky-1
-  ConvOperationIntensity = 2*B*NxSCL*NySCL*Ni*Kx*Ky/(B*Ni*NxPAD*NyPAD + Ni*Kx*Ky + B*NxSCL*NySCL)/4
-  gflops = min(MaxFLOPS, ConvOperationIntensity*MemoryBandwidth*alpha*beta) 
-  return gflops
+#### instruction efficiency
 
-# for conv1, predict: 1374, actual: 1681
-# for conv2, predict: 1394, actual: 1050
-def coalescModel(B, Kx, Ky, Nx, Ny, Ni, Nn, BZ, beta=1):
-  NxSCL, NySCL, NxPAD, NyPAD = Nx, Ny, Nx+Kx-1, Ny+Ky-1
-  ConvOperationIntensity = 2*BZ*Ni*Kx*Ky/(Ni*Kx*Ky + BZ*Ni*Kx*Ky + BZ)/4
-  gflops = min(MaxFLOPS, ConvOperationIntensity*MemoryBandwidth*alpha*beta) 
-  return gflops
-```
+One reason that we cannot reach peak compute throughput is that we won't execute compute instructions all the time. Therefore, [quantitative roofline model](https://www.sciencedirect.com/science/article/pii/S0743731517301247) propose an instruction efficiency. Basically, instruction efficienty $E_{inst} = \frac{N_{compute\_inst}}{N_{all\_inst}}$. Specifically, this paper seperate `load and store` instructions from other instructions and give different kinds of instructiosn different weights. The weight depends on the max throughput that gpu can executing these instructions. 
+- $W_{compute\_inst}=1$ since we only care about relative relationship.
+- $W_{ldst\_inst}=\frac{throughput_{compute}}{throughput_{dram}}$. 
+- As for ${other\_inst}$, we assume that all these instruction is doing add or multiply on int. $W_{ldst\_inst}=\frac{throughput_{compute}}{throughput_{intAdd}}$. This is a reasonal assumption since most other instructions is doing something like `i++` in the for loop.
+Finally, we have:  
+$$
+E_{instr} = \frac{N_{compute\_inst}* W_{compute\_inst}}{N_{compute\_inst}* W_{compute\_inst} + N_{ldst\_inst}* W_{ldst\_inst} + N_{other\_inst}* W_{other\_inst}}
+$$. 
 
-## [Block Tiling Kernel](./src/kernels/conv_03_block_tiling.cuh)
-The main problem with the coalescing\_kernel is that the operation intensity is too low! Therefore, we introduce tiling to increase the performance.
-In addition, let's introduce more constraints:
-- some of the SP might be idle. Therefore, the computation limitation should take this into count.
-- There is L1 cache miss. The Size of L1 Cache is 128KB. [!img](./pics/V100Arch.png)
-- Each thread need to load from input Ni\*TXPAD\*TYPAD times, load from weight Ni\*Kx\*Ky times, store to output TX\*TY. Each block need to do 2\*Ni\*TX\*TY\*Kx\*Ky times float op.
+As for how to the number of compute instruction, load instruction and other instructions, we can find them on [godbolt](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgBYBQogFUAztgAKAD24AGfgCsp5eiyahUAV0wtyKxqiIEh1ZpgDC6embZMQAVgBs5M4AMgRM2AByngBG2KQgAMwA7OQADuhKxA5Mbh5evgFpGfZCIWGRbDFxSdbYtsVMIkQspEQ5nt7SyTbYdlmNzUSlEdGxCV1NLW15ndYTg6HDFaNJAJTW6GakqJxcAKQATPGhqB44ANS78S4SwGTESGyXuLtaAIIHR0wnFtgXV6hKIiEdBPF7vQ7HU6/S4uAFA%2BgEKKgt4fSE/P6wsxRIxKAD6ADd9gA6JDI8Gfb7nGHmSy40hmYQEDgkslgj44OhhM4uXAASSCuIAIryAGoQACy5DO4RWZyg4tlBwAQnKZQBaHiygD0qpWbLeuNxwHo6CiEkNZ3x6AImDOSmA2DYbFxSiQzWwmFxHGd2PQqAA1hBQkQzpKzsHpVKIwBpKU0E0sEMSFJu8hgs4ZzNZ7M53N5zMYJiAs7x9CJs4AKleUsLxdL5YrSrTb3zrbb%2BfrIZiTTjCZDFZcisSSvTZ1rIYjSqCAHkXNGRLyAFrPeKC%2BL7S4jlsXbdanVEJC/DZEFJmLsmgNnA/lgDuvxvxhDJDH6DYp6Iv1CV6QBCU39I2AsJgvoBqO45nGYEaoAASugN5/IKZwgf6vKYOoRLqJuYFCMWkHCGOOQIUhF4oWhRIAJ5YSiu46hIF6Jr8URmDQNCxCWZBjpsAH4ch4ZMCWLDFq67q2t6o57naboAaJjrhn%2BwnSUh2BEHezBnHR/6AZgf5fiwxF%2Bv6o6GgpHoWp2ZyvEouw%2BEqU6zvOS64JWZx2XOC7LtZgpUa8GbGVJpm4iWfYuVZNmuQ5y7OeF7nPD4XnxFu7w0d%2Bn5MGEpBnKQcEXPsfgvvQ363tgYBcAB6moNsSgZCYfHfr%2BmlAdhRYhnhT5IABQGEZciEHh1mCoeh6g5T4Lkzm5jneRm4GtQ1mCwfB3WzQNGFnDq0UTQl%2Bo%2BattGYPixjbGcaTBrEf7PgevyAgMoTAEd6SZDho4%2Bcqi0wdlFajfZMXOdGm7tnmElZTe3VvTeNbuN1WijiqL2rgR7hRWNEUriq/2toDcGQ%2BD9Agzko4uDlI5w6DiNfY5znhIT8MFR960eQlO2ZZjq6g9juMQ9R23mUQb5EVoRJQ5t26CBlQY8aRQ2LYLKpRBLGJnL9DOywNhOLXTuBDolWYSQAEiw%2BK/IBqBILNZwJraQhHjQKVnLUjrMEQOn8c9uUuaOGYSeKLD%2Br8F2zYREDdb1WnLeosp%2B7WPRngQBt8TgmHbh7%2B7oOp9AmvBxqmhIZzemQ5HlZVf4YBI2BKKgN3uxZoVKsHQHzaT42Rcq/sQ3FRHvDZtdze9CtU13eNxZNmZKtXXf17TSPfc3/et4havWTX7VaeP0p90vnWz95lcSbxXdO3Vf68Qy9gFeIxufn%2BNBmGn%2BdpKeRgfpglfGeRXx7xAepC9tGYu0TiHq0PDMMN9h/0%2Bo3JyH1whb0TozbA6go4fhtpgdAJ4sqYDMHYM4QgbbmFINxIg9B85n0PLaZClcRZygjMgogKspZ/WobQq4YDkZ/ReiAhhaFNaVwzDzFIqs4aWQXmPHu6sqYcMwm3Cs3C8wjwXuIhuyM159QHvFLWmZdiJC8jAiSYQPRXhTkoV%2BqB1LABYLpNqhsmCYClM%2BfW1pbQ0EEh%2BDKe9t46lYkQY2N0bZhHUOeAyfFzqHjHCwc%2BSkRaXXTmxPe6kyrILCM/F0Rj36fzURorR20XBCPXt3eCkClFaRUQhaRyY3TOV4VTbsekPpZM7jklelNp45JUVvTRXA1j0G4D4fg3guA6HIOgbgLgFCCh8lkkBzclAbC2NCQ4fByBEG0O0tYh4gKjA/uQf0vgtCGG4NIHpSyBncH4EoEAOzFl9PaeQOAsAUAYDfAwWIlBqD3JSI8uITB8QVR4DwZIOB8QEG2CKAg2AbzThSMwQ5dB6DONORAKIhyoihGaORbg8z7kcGENOJghDDk4DYMYY0Ox%2BmEAAr0A2pzLmBHgeYD8aL%2BAnU6VShEURSAorcDgQ5RBSBMnpWseMLBgBKGBaC8FkLeD8EEMIMQJcpCyClYoFQGhDn6H2IYQlaALBWBZacyAax0ApHqJSk5dteiOAgM4KY3geCBCsUMcolQDCFAetkdw7QnX3XqPakYcQbXdDNQ0OYVqDD%2BvqP0Fo3qli%2BtmAMYNfq5iRsdZqdYmxthSA6V0g5VLBlcGlCKFwBMflEkSALOU%2BBiAcQ%2BJqfgFydArBWVpdZawtk%2BB2Uy/Z5Ben9JzScs5Cyln1t2VwfY/A2AgGkPzPwPhEgAE5DhaH2IkeIWgfAzp8D4Tthye39suWsG5yAQD/MBdgZ5EBXnvPCOwHY4R82Fp4MWgW/APQVp5ZgAwCqZWSBkHIYQyg1CaCpaqmodQshOCscG6QAAOW1mBE2jB4D4G1zr6hxtSJ6rIcHfXSBncBnoYag1uumNB0NfQE0LAdfBxDMbJiEetdR%2BYZQfVypnWsbl2BsA2jORmrg3TN3Zu4IKbAALDoirvBlG9BazhFpLVoMthASAZSrVKNwDzGCKcOPsFYNaB0NrWXEDZWyeBaDbXs0dvgZ1EniNIfYWhEh%2BBnYkXKM6J2yC7fwbdpzzk6c2VIYzQ74hZu7ccndda1gG1IBkRw0ggA%3D) It's also insteresting to notice that these instruction nums only depend on the kernel parameter like tile size and block size and won't change with problems set and block numbers, which means we can use `nvprof` to get metric info with this kernel on one small problem and then use the same data in all the problem. The metrics we use are `inst_compute_ld_st`, `inst_fp_32` and `inst_executed`.
 
+#### Occupacy Ratio
 
-```python
-NumMP = 80
-L1Size = 128 * 1024
-# for conv1, predict: 13800, actual: 2014
-# for conv2, predict: 13800, actual: 1266
-def blocktilingModel(B, Kx, Ky, Nx, Ny, Ni, Nn, BZ=64, TX=14, TY=14):
-  TXPAD, TYPAD = TX+Kx-1, TY+Ky-1
-  numBLOCKS = Nn/BZ * B * Nx * Ny / TX / TY
-  MPRatio = min(numBLOCKS / NumMP, 1.0)
-  numBytesWeight = (Ni*Kx*Ky*BZ)*4
-  numBytesOutput = (BZ*TX*TY)*4
-  numBytesInput = (Ni*TXPAD*TYPAD)*4
+With the help of `instruction efficiency`, now we can predict the performance of `conv1`. This is also because we optimize `conv1` pretty well and eliminate many stalls. However, the throughput of `conv2` is only 50% of what the model predicts. After running `ncu --set full ./conv1` and `ncu --set full ./conv2`, we find this is because we have fewer blocks in conv2 and therefore the `Active Warps Per SM` are pretty low. Now we can read from the report that for conv1, we have 8 active warps per SM while for conv2, we only have 0.5 active warps per SM. This means the kernel will suffer from long tail problem and the hardware will be idle while executing `__syncthreads()`.
 
-  ConvOperationIntensity = 2*BZ*Ni*Kx*Ky*TX*TY/(numBytesWeight + numBytesOutput + numBytesInput*(numBytesInput/L1Size + 1)) 
-  gflops = min(MaxFLOPS*MPRatio, ConvOperationIntensity*MemoryBandwidth*alpha) 
-  return gflops
-```
+We propose $occupancy\_ratio =  \min(actived\_warps, 1.0)$ to model idle SM. Even though we optimize the kernel well, resources will still be wasted if the problem size is to small. We can use num of blocks and num of SM to estimate `actived_warps`, while in our program we just use the value we obversed in ncu report.
 
-
-## [Shared Model](./src/kernels/conv_05_vectorize.cuh)
-- Each Block first load to L2 Cache. Then load from L2 cache.
-```python
-L2Size = 6144 * 1024 # 6144 KB
-MemoryBandwidth = 2155 * (1024 ** 3) # 651 GB/s
-```
-
+To optimize our kernel in the future, we can using auto search to explore different parameter to balance op idensity and hardware occupancy. We don't do this due to time issue.
 
 ## Appendix
 1. useful commands 
@@ -138,3 +87,5 @@ Device 0: "NVIDIA TITAN V"
   Supports MultiDevice Co-op Kernel Launch:      Yes
   Device PCI Domain ID / Bus ID / location ID:   0 / 175 / 0
 ```
+
+3. [godbolt link](https://godbolt.org/#z:OYLghAFBqd5TKALEBjA9gEwKYFFMCWALugE4A0BIEAZgQDbYB2AhgLbYgDkAjF%2BTXRMiAZVQtGIHgBYBQogFUAztgAKAD24AGfgCsp5eiyahUAV0wtyKxqiIEh1ZpgDC6embZMQAVgBs5M4AMgRM2AByngBG2KQgAMwA7OQADuhKxA5Mbh5evgFpGfZCIWGRbDFxSdbYtsVMIkQspEQ5nt7SyTbYdlmNzUSlEdGxCV1NLW15ndYTg6HDFaNJAJTW6GakqJxcAKQATPGhqB44ANS78S4SwGTESGyXuLtaAIIHR0wnFtgXV6hKIiEdBPF7vQ7HU6/S4uAFA%2BgEKKgt4fSE/P6wsxRIxKAD6ADd9gA6JDI8Gfb7nGHmSy40hmYQEDgkslgj44OhhM4uXAASSCuIAIryAGoQACy5DO4RWZyg4tlBwAQnKZQBaHiygD0qpWbLeuNxwHo6CiEkNZ3x6AImDOSmA2DYbFxSiQzWwmFxHGd2PQqAA1hBQkQzpKzsHpVKIwBpKU0E0sEMSFJu8hgs4ZzNZ7M53N5zMYJiAs7x9CJs4AKleUsLxdL5YrSrTb3zrbb%2BfrIZiTTjCZDFZcisSSvTZ1rIYjSqCAHkXNGRLyAFrPeKC%2BL7S4jlsXbdanVEJC/DZEFJmLsmgNnA/lgDuvxvxhDJDH6DYp6Iv1CV6QBCU39I2AsJgvoBqO45nGYEaoAASugN5/IKZwgf6vKYOoRLqJuYFCMWkHCGOOQIUhF4oWhRIAJ5YSiu46hIF6Jr8URmDQNCxCWZBjpsAH4ch4ZMCWLDFq67q2t6o57naboAaJjrhn%2BwnSUh2BEHezBnHR/6AZgf5fiwxF%2Bv6o6GgpHoWp2ZyvEouw%2BEqU6zvOS64JWZx2XOC7LtZgpUa8GbGVJpm4iWfYuVZNmuQ5y7OeF7nPD4XnxFu7w0d%2Bn5MGEpBnKQcEXPsfgvvQ363tgYBcAB6moNsSgZCYfHfr%2BmlAdhRYhnhT5IABQGEZciEHh1mCoeh6g5T4Lkzm5jneRm4GtQ1mCwfB3WzQNGFnDq0UTQl%2Bo%2BattGYPixjbGcaTBrEf7PgevyAgMoTAEd6SZDho4%2Bcqi0wdlFajfZMXOdGm7tnmElZTe3VvTeNbuN1WijiqL2rgR7hRWNEUriq/2toDcGQ%2BD9Agzko4uDlI5w6DiNfY5znhIT8MFR960eQlO2ZZjq6g9juMQ9R23mUQb5EVoRJQ5t26CBlQY8aRQ2LYLKpRBLGJnL9DOywNhOLXTuBDolWYSQAEiw%2BK/IBqBILNZwJraQhHjQKVnLUjrMEQOn8c9uUuaOGYSeKLD%2Br8F2zYREDdb1WnLeosp%2B7WPRngQBt8TgmHbh7%2B7oOp9AmvBxqmhIZzemQ5HlZVf4YBI2BKKgN3uxZoVKsHQHzaT42Rcq/sQ3FRHvDZtdze9CtU13eNxZNmZKtXXf17TSPfc3/et4havWTX7VaeP0p90vnWz95lcSbxXdO3Vf68Qy9gFeIxufn%2BNBmGn%2BdpKeRgfpglfGeRXx7xAepC9tGYu0TiHq0PDMMN9h/0%2Bo3JyH1whb0TozbA6go4fhtpgdAJ4sqYDMHYM4QgbbmFINxIg9B85n0PLaZClcRZygjMgogKspZ/WobQq4YDkZ/ReiAhhaFNaVwzDzFIqs4aWQXmPHu6sqYcMwm3Cs3C8wjwXuIhuyM159QHvFLWmZdiJC8jAiSYQPRXhTkoV%2BqB1LABYLpNqhsmCYClM%2BfW1pbQ0EEh%2BDKe9t46lYkQY2N0bZhHUOeAyfFzqHjHCwc%2BSkRaXXTmxPe6kyrILCM/F0Rj36fzURorR20XBCPXt3eCkClFaRUQhaRyY3TOV4VTbsekPpZM7jklelNp45JUVvTRXA1j0G4D4fg3guA6HIOgbgLgFCCh8lkkBzclAbC2NCQ4fByBEG0O0tYh4gKjA/uQf0vgtCGG4NIHpSyBncH4EoEAOzFl9PaeQOAsAUAYDfAwWIlBqD3JSI8uITB8QVR4DwZIOB8QEG2CKAg2AbzThSMwQ5dB6DONORAKIhyoihGaORbg8z7kcGENOJghDDk4DYMYY0Ox%2BmEAAr0A2pzLmBHgeYD8aL%2BAnU6VShEURSAorcDgQ5RBSBMnpWseMLBgBKGBaC8FkLeD8EEMIMQJcpCyClYoFQGhDn6H2IYQlaALBWBZacyAax0ApHqJSk5dteiOAgM4KY3geCBCsUMcolQDCFAetkdw7QnX3XqPakYcQbXdDNQ0OYVqDD%2BvqP0Fo3qli%2BtmAMYNfq5iRsdZqdYmxthSA6V0g5VLBlcGlCKFwBMflEkSALOU%2BBiAcQ%2BJqfgFydArBWVpdZawtk%2BB2Uy/Z5Ben9JzScs5Cyln1t2VwfY/A2AgGkPzPwPhEgAE5DhaH2IkeIWgfAzp8D4Tthye39suWsG5yAQD/MBdgZ5EBXnvPCOwHY4R82Fp4MWgW/APQVp5ZgAwCqZWSBkHIYQyg1CaCpaqmodQshOCscG6QAAOW1mBE2jB4D4G1zr6hxtSJ6rIcHfXSBncBnoYag1uumNB0NfQE0LAdfBxDMbJiEetdR%2BYZQfVypnWsbl2BsA2jORmrg3TN3Zu4IKbAALDoirvBlG9BazhFpLVoMthASAZSrVKNwDzGCKcOPsFYNaB0NrWXEDZWyeBaDbXs0dvgZ1EniNIfYWhEh%2BBnYkXKM6J2yC7fwbdpzzk6c2VIYzQ74hZu7ccndda1gG1IBkRw0ggA%3D)
