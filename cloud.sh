@@ -11,4 +11,5 @@ aria2c --header "Host: adcdownload.apple.com" --header "Accept: text/html,applic
 xcode-select --install 
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 
-# install anaconda
+# install anaconda: search link in https://www.anaconda.com/download
+curl https://repo.anaconda.com/archive/Anaconda3-2023.03-1-MacOSX-arm64.sh

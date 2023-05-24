@@ -1,5 +1,8 @@
-CXX := /usr/local/Cellar/llvm/16.0.4/bin/clang++
-LDFLAGS := -L/usr/local/Cellar/libomp/16.0.3/lib -I../metal-cpp # specify your library linking options here
+OPTPATH=/opt/homebrew/opt
+CXX = $(OPTPATH)/llvm/bin/clang++
+LDFLAGS = -L$(OPTPATH)/libomp/lib -I../metal-cpp # specify your library linking options here
+# CXX := /usr/local/Cellar/llvm/16.0.4/bin/clang++
+# LDFLAGS := -L/usr/local/Cellar/libomp/16.0.3/lib -I../metal-cpp 
 FRAMEWORK := -framework Metal -framework Foundation -framework MetalKit -framework Accelerate
 CXXFLAGS := -std=c++17 -stdlib=libc++ -O3 -ffast-math -fopenmp $(LDFLAGS) -fno-objc-arc $(FRAMEWORK) -g
 SRCS := $(wildcard *.cpp) $(wildcard *.h)
