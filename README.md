@@ -13,7 +13,7 @@ xcode-select --install
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 ```
 
-
+In AWS, you need to download xcode.xip and xip it using `xip -x Xcode11.xip`.
 
 ## Reference
 
