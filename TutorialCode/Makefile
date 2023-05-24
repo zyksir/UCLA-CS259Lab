@@ -1,4 +1,4 @@
-CXX = /usr/local/Cellar/llvm/16.0.3/bin/clang++
+CXX = /usr/local/Cellar/llvm/16.0.4/bin/clang++
 LDFLAGS = -L/usr/local/Cellar/libomp/16.0.3/lib -I../metal-cpp # specify your library linking options here
 FRAMEWORK = -framework Metal -framework Foundation -framework MetalKit
 CXXFLAGS = -std=c++17 -stdlib=libc++ -O3 -fopenmp $(LDFLAGS) -fno-objc-arc $(FRAMEWORK) -g

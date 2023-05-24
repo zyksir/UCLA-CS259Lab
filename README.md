@@ -18,4 +18,5 @@ In AWS, you need to download xcode.xip and xip it using `xip -x Xcode11.xip`.
 ## Reference
 
 - [m1-gpu-cpp](https://github.com/larsgeb/m1-gpu-cpp/tree/main) and the blogs he wrote is the tutorial for beginners about how to write MSL in cpp.
-- 
+- To create M1 instance in AWS, follow [this instruction](https://aws.amazon.com/blogs/aws/use-amazon-ec2-m1-mac-instances-to-build-test-macos-ios-ipados-tvos-and-watchos-apps/)
+- [GEMM example](Matrix multiplication example)
