@@ -21,4 +21,4 @@ conda env create --file environment.yaml
 conda activate dlsys-needle-m1
 python3 download_data.py
 make
-
+pip3 install -e .
