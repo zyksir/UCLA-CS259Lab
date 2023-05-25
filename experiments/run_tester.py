@@ -10,7 +10,7 @@ def test_matmul(tester, m, n, p):
     tester.test_method(data_func, func, "matmul")
 
 if __name__ == "__main__":
-    MATMUL_DIMS = [(128, 128, 128), (4096, 4096, 4096)]
+    MATMUL_DIMS = [(128, 128, 128), (64, 4096, 1024)]
     needle_cpu_tester = NeedleCPUTester()
     torch_cpu_tester = TorchCPUTester()
     needle_m1_tester = NeedleM1Tester()
