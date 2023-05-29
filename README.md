@@ -21,7 +21,9 @@ brew install llvm
 brew install libomp
 ```
 
-By now, you should be able to compile for `TutorialCode` and `TutorialGEMM`. You can go into `TutorialGEMM` and run `cd TutorialGEMM && make main && ./main.x`. The code should run without error.
+By now, you should be able to compile for `TutorialCode` and `TutorialGEMM`. You can go into `TutorialGEMM` and run `cd TutorialGEMM && make && ./main.x`. The code should run without error. 
+
+ps: if you run into strange error, run `brew doctor`, you might need to reinstall xcode using `sudo rm -rf /Library/Developer/CommandLineTools && xcode-select –install`
 
 ### Step2. Install python dependencies
 

@@ -75,6 +75,16 @@
         "compare": "cpp",
         "concepts": "cpp",
         "algorithm": "cpp",
-        "iterator": "cpp"
+        "iterator": "cpp",
+        "__tree": "cpp",
+        "charconv": "cpp",
+        "condition_variable": "cpp",
+        "format": "cpp",
+        "map": "cpp",
+        "numbers": "cpp",
+        "queue": "cpp",
+        "semaphore": "cpp",
+        "span": "cpp",
+        "thread": "cpp"
     }
 }

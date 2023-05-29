@@ -69,6 +69,7 @@ void MatrixMultiplier::allocate_memory(int rows_X, int cols_X, int inner_dim) {
     m_device_buffer_A_ptr = m_device_ptr->newBuffer(m_rows_X * m_cols_A * sizeof(float), MTL::ResourceStorageModeShared);
     m_device_buffer_B_ptr = m_device_ptr->newBuffer(m_cols_A * m_cols_X * sizeof(float), MTL::ResourceStorageModeShared);
     m_device_buffer_X_ptr = m_device_ptr->newBuffer(m_rows_X * m_cols_X * sizeof(float), MTL::ResourceStorageModeShared);
+    m_device_buffer_debug_ptr = m_device_ptr->newBuffer(8 * sizeof(uint), MTL::ResourceStorageModeShared);
     
     // This is how we pass parameter values into our custom shader.
     // Steps to pass parameters (other than the data buffers) to a kernel:
@@ -166,6 +167,70 @@ void MatrixMultiplier::run_multiply_on_gpu()
     commandBuffer->waitUntilCompleted();
 }
 
+void MatrixMultiplier::run_multiply_on_gpu_mat_mul_coalescing()
+{
+    MatMulParams *params = (MatMulParams *)m_device_buffer_params_ptr->contents();
+    params->row_dim_x = m_rows_X;
+    params->col_dim_x = m_cols_X;
+    params->inner_dim = m_cols_A;
+    // std::cout << "run_multiply_on_gpu_mat_mul_coalescing:" << m_rows_X << m_cols_X << m_cols_A << std::endl;
+    // Setup
+    MTL::CommandBuffer *commandBuffer = m_CommandQueue->commandBuffer();
+    assert(commandBuffer != nullptr);
+
+    MTL::ComputeCommandEncoder *computeEncoder = commandBuffer->computeCommandEncoder();
+    assert(computeEncoder != nullptr);
+
+    computeEncoder->setComputePipelineState(m_MatMultiplyFunctionPSO);
+    computeEncoder->setBuffer(m_device_buffer_A_ptr, 0, 0);
+    computeEncoder->setBuffer(m_device_buffer_B_ptr, 0, 1);
+    computeEncoder->setBuffer(m_device_buffer_X_ptr, 0, 2);
+    computeEncoder->setBuffer(m_device_buffer_params_ptr, 0, 3);
+
+    // Note: The kernel thread's 'x' position in the grid corresponds to the column index in the result matrix
+    // and the 'y' position corresponds to the row index. Note that the matrix is in row-major so that the
+    // column index is the "fast" index.
+    
+    // 8-32 threads per dim per group seem to work fine.
+    // Both of these values must be the same!
+    const uint N = m_rows_X, M = m_cols_X;
+    const uint BX = 32, BY = 32;
+    MTL::Size gridSize = MTL::Size::Make(CEIL_DIV(N, BX), CEIL_DIV(M, BY), 1); // should be the size of the grid = (x_threads, y_threads)
+    MTL::Size blockSize = MTL::Size::Make(BX*BY, 1, 1); //
+    computeEncoder->dispatchThreadgroups(gridSize, blockSize);
+    computeEncoder->endEncoding();
+
+    // Start the shader!
+    commandBuffer->commit();
+    // Shader is still running here. Put other code here if you like.
+    commandBuffer->waitUntilCompleted();
+}
+
+void MatrixMultiplier::run_debug() {
+    const uint N = m_rows_X, M = m_cols_X;
+    const uint BX = 32, BY = 32;
+    MTL::Size thread_group_count = MTL::Size::Make(CEIL_DIV(N, BX), CEIL_DIV(M, BY), 1); // should be the size of the grid = (x_threads, y_threads)
+    MTL::Size threadgroupSize = MTL::Size::Make(BX, BY, 1); //
+
+    MTL::CommandBuffer *commandBuffer = m_CommandQueue->commandBuffer();
+    assert(commandBuffer != nullptr);
+    MTL::ComputeCommandEncoder *computeEncoder = commandBuffer->computeCommandEncoder();
+    assert(computeEncoder != nullptr);
+    computeEncoder->setComputePipelineState(m_MatMultiplyFunctionPSO);
+    computeEncoder->setBuffer(m_device_buffer_debug_ptr, 0, 0);
+    computeEncoder->dispatchThreadgroups(thread_group_count, threadgroupSize);
+    computeEncoder->endEncoding();
+    commandBuffer->commit();
+    commandBuffer->waitUntilCompleted();
+    std::cout << "debug result:\t";
+    uint* dbeugResults = static_cast<uint*>(m_device_buffer_debug_ptr->contents());
+    for(int i = 0; i < 8; ++i) {
+        std::cout << dbeugResults[i] << "\t";
+    }
+    std::cout << std::endl;
+}
+
+
 void MatrixMultiplier::run_multiply_on_gpu_mat_mul_opt1()
 {
     MatMulParams *params = (MatMulParams *)m_device_buffer_params_ptr->contents();
@@ -250,6 +315,51 @@ void MatrixMultiplier::run_multiply_on_gpu_mat_mul_opt2()
     MTL::Size thread_group_count = MTL::Size::Make(x_group_count, y_group_count, 1); // should be the size of the grid = (x_threads, y_threads)
     MTL::Size threadgroupSize = MTL::Size::Make(x_threads_per_group, y_threads_per_group, 1); //
     computeEncoder->dispatchThreadgroups(thread_group_count, threadgroupSize);
+    computeEncoder->endEncoding();
+
+    // Start the shader!
+    commandBuffer->commit();
+    // Shader is still running here. Put other code here if you like.
+    commandBuffer->waitUntilCompleted();
+}
+
+void MatrixMultiplier::run_multiply_on_gpu_mat_mul_opt3()
+{
+    // Set the parameter values of the struct with the values you want to send to the shader (see below).
+    MatMulParams *params = (MatMulParams *)m_device_buffer_params_ptr->contents();
+    params->row_dim_x = m_rows_X;
+    params->col_dim_x = m_cols_X;
+    params->inner_dim = m_cols_A;
+    // Setup
+    MTL::CommandBuffer *commandBuffer = m_CommandQueue->commandBuffer();
+    assert(commandBuffer != nullptr);
+
+    MTL::ComputeCommandEncoder *computeEncoder = commandBuffer->computeCommandEncoder();
+    assert(computeEncoder != nullptr);
+
+    computeEncoder->setComputePipelineState(m_MatMultiplyFunctionPSO);
+    computeEncoder->setBuffer(m_device_buffer_A_ptr, 0, 0);
+    computeEncoder->setBuffer(m_device_buffer_B_ptr, 0, 1);
+    computeEncoder->setBuffer(m_device_buffer_X_ptr, 0, 2);
+    computeEncoder->setBuffer(m_device_buffer_params_ptr, 0, 3);
+
+    // Note: The kernel thread's 'x' position in the grid corresponds to the column index in the result matrix
+    // and the 'y' position corresponds to the row index. Note that the matrix is in row-major so that the
+    // column index is the "fast" index.
+    
+    // 8-16 threads per dim per group seem to work well.
+    const int N = m_rows_X;
+    const int M = m_cols_X;
+    const int BX = 32;
+    const int BY = 32;
+    const int TY = 4;    
+    const int TX = 4;
+
+    // block = dim3(BX*BY/(TX*TY));
+    // grid = dim3(CEIL_DIV(N, BX), CEIL_DIV(M, BY));
+    MTL::Size blockSize = MTL::Size::Make(BX*BY/(TX*TY), 1, 1); // should be the size of the grid = (x_threads, y_threads)
+    MTL::Size gridSize = MTL::Size::Make(CEIL_DIV(N, BX), CEIL_DIV(M, BY), 1); //
+    computeEncoder->dispatchThreadgroups(gridSize, blockSize);
     computeEncoder->endEncoding();
 
     // Start the shader!

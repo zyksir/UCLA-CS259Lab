@@ -54,6 +54,18 @@ public:
      * Run shader "mat_mul_opt2".
      */
     void run_multiply_on_gpu_mat_mul_opt2();
+
+    /**
+     * Run shader "mat_mul_opt3".
+     */
+    void run_multiply_on_gpu_mat_mul_opt3();
+
+    /**
+     * Run shader "mat_mul_opt3".
+     */
+    void run_multiply_on_gpu_mat_mul_coalescing();
+
+    void run_debug();
     
     /**
      * Run the multiplication on the CPU (actually AMX units) using
@@ -83,6 +95,8 @@ private:
     MTL::Buffer *m_device_buffer_X_ptr;
     // Device pointer to struct containing the shader parameters.
     MTL::Buffer* m_device_buffer_params_ptr;
+
+    MTL::Buffer *m_device_buffer_debug_ptr;
     
     
     int m_rows_X;

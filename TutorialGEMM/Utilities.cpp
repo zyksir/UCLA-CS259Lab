@@ -89,7 +89,7 @@ void mat_multiply_blas(MatrixF &A, const MatrixF &B, const MatrixF &C, float alp
 void randomize_uniform(MatrixF &A, float min, float max)
 {
     static std::random_device rand_dev;
-    static std::mt19937 mersenne_twister_engine(rand_dev());
+    static std::mt19937 mersenne_twister_engine(0);
     // mersenne_twister_engine.seed(static_cast<unsigned long>(time(NULL)));
     std::uniform_real_distribution<float> uni(min, max);
     for (int i = 0; i < A.size(); i++)

@@ -92,13 +92,13 @@ void run_mat_mult_shaders() {
     float microsec_per_call;
     // Benchmark the Metal code
     
-    cout << "Running benchmark for Metal shader: " << shader_name << endl;
-    microsec_per_call = benchmark(loop_count, [&] () {
-        // Perform the multiplication
-        multiplier.run_multiply_on_gpu();
-    });
-    cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
-    cout << "\n-------------------------\n" << endl;
+    // cout << "Running benchmark for Metal shader: " << shader_name << endl;
+    // microsec_per_call = benchmark(loop_count, [&] () {
+    //     // Perform the multiplication
+    //     multiplier.run_multiply_on_gpu();
+    // });
+    // cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
+    // cout << "\n-------------------------\n" << endl;
     
     // Switch to the NVIDIA example optimized shader.
     const string shader_name_nv_optimized = "mat_mul_optimized_nv";
@@ -109,13 +109,31 @@ void run_mat_mult_shaders() {
     // Verify that it computes the correct result
     multiplier.check_results();
     
-    cout << "Running benchmark for Metal shader: " << shader_name_nv_optimized << endl;
-    microsec_per_call = benchmark(loop_count, [&] () {
-        // Perform the multiplication
-        multiplier.run_multiply_on_gpu();
-    });
-    cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
-    cout << "\n-------------------------\n" << endl;
+    // cout << "Running benchmark for Metal shader: " << shader_name_nv_optimized << endl;
+    // microsec_per_call = benchmark(loop_count, [&] () {
+    //     // Perform the multiplication
+    //     multiplier.run_multiply_on_gpu();
+    // });
+    // cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
+    // cout << "\n-------------------------\n" << endl;
+
+    const string shader_name_mat_mul_coalescing = "mat_mul_coalescing";
+    multiplier.change_shader(shader_name_mat_mul_coalescing);
+    multiplier.initialize_data();
+    // Perform the multiplication
+    multiplier.run_multiply_on_gpu_mat_mul_coalescing();
+    // Verify that it computes the correct result
+    multiplier.check_results();
+    // cout << "Running benchmark for Metal shader: " << shader_name_mat_mul_coalescing << endl;
+    // microsec_per_call = benchmark(loop_count, [&] () {
+    //     // Perform the multiplication
+    //     multiplier.run_multiply_on_gpu_mat_mul_coalescing();
+    // });
+    // cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
+    // cout << "\n-------------------------\n" << endl;
+
+    // multiplier.change_shader("inspector");
+    // multiplier.run_debug();
     
     // Switch to the my optimized shader v1.
     const string shader_name_mat_mul_opt1 = "mat_mul_opt1";
@@ -127,15 +145,15 @@ void run_mat_mult_shaders() {
     multiplier.check_results();
     
     cout << "Running benchmark for Metal shader: " << shader_name_mat_mul_opt1 << endl;
-    microsec_per_call = benchmark(loop_count, [&] () {
-        // Perform the multiplication
-        multiplier.run_multiply_on_gpu_mat_mul_opt1();
-    });
-    cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
-    cout << "\n-------------------------\n" << endl;
+    // microsec_per_call = benchmark(loop_count, [&] () {
+    //     // Perform the multiplication
+    //     multiplier.run_multiply_on_gpu_mat_mul_opt1();
+    // });
+    // cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
+    // cout << "\n-------------------------\n" << endl;
     
     // Switch to the my optimized shader v2.
-    const string shader_name_mat_mul_opt2 = "mat_mul_opt2";
+    const string shader_name_mat_mul_opt2 = "mat_mul_opt5";
     multiplier.change_shader(shader_name_mat_mul_opt2);
     multiplier.initialize_data();
     // Perform the multiplication
@@ -147,6 +165,23 @@ void run_mat_mult_shaders() {
     microsec_per_call = benchmark(loop_count, [&] () {
         // Perform the multiplication
         multiplier.run_multiply_on_gpu_mat_mul_opt2();
+    });
+    cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
+    cout << "\n-------------------------\n" << endl;
+
+    // Switch to the my optimized shader v1.
+    const string shader_name_mat_mul_opt3 = "mat_mul_opt4";
+    multiplier.change_shader(shader_name_mat_mul_opt3);
+    multiplier.initialize_data();
+    // Perform the multiplication
+    multiplier.run_multiply_on_gpu_mat_mul_opt3();
+    // Verify that it computes the correct result
+    // multiplier.check_results();
+    
+    cout << "Running benchmark for Metal shader: " << shader_name_mat_mul_opt3 << endl;
+    microsec_per_call = benchmark(loop_count, [&] () {
+        // Perform the multiplication
+        multiplier.run_multiply_on_gpu_mat_mul_opt3();
     });
     cout << matmul_time_to_gflops(rows_X, cols_X, inner_dim, microsec_per_call) << " GFLOPS" << endl;
     cout << "\n-------------------------\n" << endl;
