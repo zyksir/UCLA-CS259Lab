@@ -15,14 +15,14 @@
 using namespace std;
 
 // please make sure this count is larget than 100
-static const int loop_count = 100;
+static const int loop_count = 10;
 
 int main() {
     float microsec_per_call;
     vector< tuple<uint, uint, uint> > matrix_size_vec = {
         // {1024, 1024, 1024}, 
-        {72, 73, 74},
-        {128, 128, 128}
+        {73, 73, 73},
+        // {128, 128, 128}
     };
     MTL::Device *device = MTL::CreateSystemDefaultDevice();
     for(const auto [rows_X, cols_X, inner_dim] : matrix_size_vec) {

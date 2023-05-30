@@ -40,9 +40,9 @@ kernel void gemm_opt(device const float* A,
                             uint2 id [[ thread_position_in_grid ]])
 {
     // Note: matrices are in row-major order in the supplied backing arrays.
-    const uint row_dim_x = params.N;
-    const uint col_dim_x = params.M;
-    const uint inner_dim = params.P;
+    const uint row_dim_x = params.x_rows;
+    const uint col_dim_x = params.x_cols;
+    const uint inner_dim = params.x_inner;
     const uint idx = id.x*4; // column index of the corner in X.
     const uint idy = id.y*8; // row index of the corner in X.
     // Note: float4x4 uses column major: Asub[m][n] is row n of column m.
@@ -98,9 +98,9 @@ kernel void gemm_tiling(device const float* A,
     constexpr int TX = 1;
     constexpr int TY = 2;
     // Note: matrices are in row-major order in the supplied backing arrays.
-    const uint row_dim_x = params.N;
-    const uint col_dim_x = params.M;
-    const uint inner_dim = params.P;
+    const uint row_dim_x = params.x_rows;
+    const uint col_dim_x = params.x_cols;
+    const uint inner_dim = params.x_inner;
     const uint idx = id.x*4*params.TX; // column index of the corner in X.
     const uint idy = id.y*4*params.TY; // row index of the corner in X.
     // Note: float4x4 uses column major: Asub[m][n] is row n of column m.

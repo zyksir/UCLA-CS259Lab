@@ -16,9 +16,9 @@ kernel void gemm_naive(device const float* A,
                         uint2 id [[ thread_position_in_grid ]])
 {
     // Note: matrices are in row-major order in the supplied backing arrays.
-    const uint row_dim_x = params.N;
-    const uint col_dim_x = params.M;
-    const uint inner_dim = params.P;
+    const uint row_dim_x = params.x_rows;
+    const uint col_dim_x = params.x_cols;
+    const uint inner_dim = params.x_inner;
     
     // Check if the thread is in-bounds.
     if ((id.x < col_dim_x) && (id.y < row_dim_x)) {

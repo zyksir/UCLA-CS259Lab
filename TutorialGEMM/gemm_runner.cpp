@@ -93,11 +93,11 @@ void GEMMRunner::run_gemm_on_gpu(const GEMMParams& p) {
     // Note: The kernel thread's 'x' position in the grid corresponds to the column index in the result matrix
     // and the 'y' position corresponds to the row index. 
     // Note that the matrix is in row-major so that the column index is the "fast" index.
-    MTL::Size grid_size = MTL::Size::Make(CEIL_DIV(p.M, p.BX*p.TX), CEIL_DIV(p.N, p.BY*p.TY), 1); // should be the size of the grid = (x_threads, y_threads)
+    MTL::Size grid_size = MTL::Size::Make(CEIL_DIV(p.x_cols, p.BX*p.TX), CEIL_DIV(p.x_rows, p.BY*p.TY), 1); // should be the size of the grid = (x_threads, y_threads)
     MTL::Size thread_group_size = MTL::Size::Make(p.BX, p.BY, 1); 
     computeEncoder->dispatchThreadgroups(grid_size, thread_group_size);
-    cout << grid_size.width << "," << grid_size.height << endl;
-    cout << thread_group_size.width << "," << thread_group_size.height << endl;
+    // cout << grid_size.width << "," << grid_size.height << endl;
+    // cout << thread_group_size.width << "," << thread_group_size.height << endl;
 
     computeEncoder->endEncoding();
     commandBuffer->commit();

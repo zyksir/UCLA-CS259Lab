@@ -13,11 +13,13 @@ A class to manage all of the Metal objects this app creates.
 
 #include "Foundation/Foundation.hpp"
 #include "Metal/Metal.hpp"
+#include "GEMMParams.h"
 
 #include "map"
 
 typedef float scalar_t;
 const size_t ELEM_SIZE = sizeof(scalar_t);
+#define CEIL_DIV(M, N) (((M) + (N)-1) / (N))
 
 class MetalOperations
 {

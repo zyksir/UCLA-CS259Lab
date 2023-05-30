@@ -31,8 +31,8 @@ kernel void gemm_shared(device const float* inA,
     // Note: be sure that this is set to the same value as "threads per group" in the calling code!
     const int BLOCK_SIZE = 8;
 
-    const uint wB = params.M;
-    const uint wA = params.P;
+    const uint wB = params.x_cols;
+    const uint wA = params.x_inner;
     
     // Block index
     const uint bx =threadgroup_pos.x;

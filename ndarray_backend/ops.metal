@@ -1,4 +1,5 @@
 #include <metal_stdlib>
+#include "GEMMParams.h"
 using namespace metal;
 
 typedef float scalar_t;
@@ -210,12 +211,14 @@ kernel void ewise_tanh(device const scalar_t* a [[buffer(0)]],
 kernel void matmul_naive(device const scalar_t* a [[buffer(0)]],
                          device const scalar_t* b [[buffer(1)]],
                          device scalar_t* out     [[buffer(2)]],
-                         device const uint32_t* M [[buffer(3)]],
-                         device const uint32_t* N [[buffer(4)]],
-                         device const uint32_t* P [[buffer(5)]],
+                         constant GEMMParams& params,
+                        //  device const uint32_t* M [[buffer(3)]],
+                        //  device const uint32_t* N [[buffer(4)]],
+                        //  device const uint32_t* P [[buffer(5)]],
                          uint2 index              [[thread_position_in_grid]])
 {
-    int32_t j = index.x, i = index.y, m = (*M), n = (*N), p = (*P);
+    // int32_t j = index.x, i = index.y, m = (*M), n = (*N), p = (*P);
+    int32_t j = index.x, i = index.y, m = params.x_rows, n = params.x_inner, p = params.x_cols;
 
     // Check if the thread is in-bounds.
     if ((i < m) && (j < p)) {
@@ -232,17 +235,20 @@ kernel void matmul_naive(device const scalar_t* a [[buffer(0)]],
 kernel void matmul_block(device const scalar_t* A [[buffer(0)]],
                          device const scalar_t* B [[buffer(1)]],
                          device scalar_t* out     [[buffer(2)]],
-                         device const uint32_t* M [[buffer(3)]],
-                         device const uint32_t* N [[buffer(4)]],
-                         device const uint32_t* P [[buffer(5)]],
+                         constant GEMMParams& params,
+                        //  device const uint32_t* M [[buffer(3)]],
+                        //  device const uint32_t* N [[buffer(4)]],
+                        //  device const uint32_t* P [[buffer(5)]],
                          uint2 threadgroup_pos [[ threadgroup_position_in_grid ]],
                          uint2 local_thread_idx [[ thread_position_in_threadgroup ]])
 {
     // Note: be sure that this is set to the same value as "threads per group" in the calling code!
     const int BLOCK_SIZE = 8;
 
-    const uint32_t wB = (*P);
-    const uint32_t wA = (*N);
+    // const uint32_t wB = (*P);
+    // const uint32_t wA = (*N);
+    const uint32_t wB = params.x_cols;
+    const uint32_t wA = params.x_inner;
     
     // Block index
     const uint bx = threadgroup_pos.x;

@@ -145,18 +145,22 @@ void MetalOperations::Blocking2D(std::vector<MTL::Buffer *> buffers,
     {
         computeEncoder->setBuffer(buffers[i], 0, i);
     }
+    GEMMParams p = *(static_cast<GEMMParams*>(buffers[3]->contents()));
+    MTL::Size grid_size = MTL::Size::Make(CEIL_DIV(p.x_cols, p.BX*p.TX), CEIL_DIV(p.x_rows, p.BY*p.TY), 1); // should be the size of the grid = (x_threads, y_threads)
+    MTL::Size thread_group_size = MTL::Size::Make(p.BX, p.BY, 1); 
+    computeEncoder->dispatchThreadgroups(grid_size, thread_group_size);
 
-    // Both of these values must be the same!
-    const int x_threads_per_group = 8;
-    const int y_threads_per_group = 8;
-    assert(x_threads_per_group == y_threads_per_group);
+    // // Both of these values must be the same!
+    // const int x_threads_per_group = 8;
+    // const int y_threads_per_group = 8;
+    // assert(x_threads_per_group == y_threads_per_group);
     
-    // The number of thread groups (i.e., blocks) per grid.
-    const int x_group_count = (columns + x_threads_per_group - 1) / x_threads_per_group;
-    const int y_group_count = (rows + y_threads_per_group - 1) / y_threads_per_group;
-    MTL::Size thread_group_count = MTL::Size::Make(x_group_count, y_group_count, 1);
-    MTL::Size threadgroupSize = MTL::Size::Make(x_threads_per_group, y_threads_per_group, 1);
-    computeEncoder->dispatchThreadgroups(thread_group_count, threadgroupSize);
+    // // The number of thread groups (i.e., blocks) per grid.
+    // const int x_group_count = (columns + x_threads_per_group - 1) / x_threads_per_group;
+    // const int y_group_count = (rows + y_threads_per_group - 1) / y_threads_per_group;
+    // MTL::Size thread_group_count = MTL::Size::Make(x_group_count, y_group_count, 1);
+    // MTL::Size threadgroupSize = MTL::Size::Make(x_threads_per_group, y_threads_per_group, 1);
+    // computeEncoder->dispatchThreadgroups(thread_group_count, threadgroupSize);
 
     // Encode the compute command.
     computeEncoder->endEncoding();
@@ -295,12 +299,15 @@ void MetalOperations::MatMul(MTL::Buffer *a,
                              uint32_t P,
                              const char *method)
 {
-    auto M_buffer = ScalarToMTLBuffer(M, _mDevice);
-    auto N_buffer = ScalarToMTLBuffer(N, _mDevice);
-    auto P_buffer = ScalarToMTLBuffer(P, _mDevice);
-    std::vector<MTL::Buffer *> buffers = {a, b, out, M_buffer, N_buffer, P_buffer};
+    // auto M_buffer = ScalarToMTLBuffer(M, _mDevice);
+    // auto N_buffer = ScalarToMTLBuffer(N, _mDevice);
+    // auto P_buffer = ScalarToMTLBuffer(P, _mDevice);
+    GEMMParams params{M, P, N};
+    auto params_buffer = ScalarToMTLBuffer(params, _mDevice);
+    std::vector<MTL::Buffer *> buffers = {a, b, out, params_buffer}; // , M_buffer, N_buffer, P_buffer};
     Blocking2D(buffers, M, P, method);
-    M_buffer->release();
-    N_buffer->release();
-    P_buffer->release();
+    params_buffer->release();
+    // M_buffer->release();
+    // N_buffer->release();
+    // P_buffer->release();
 }
