@@ -144,8 +144,13 @@ void EwiseTanh(const M1Array& a, M1Array* out) {
 ////////////////////////////////////////////////////////////////////////////////
 // Matrix mulplication
 ////////////////////////////////////////////////////////////////////////////////
-void Matmul(const M1Array& a, const M1Array& b, M1Array* out, uint32_t M, uint32_t N, uint32_t P) {
-  MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, M, N, P, "matmul_naive");
+void Matmul(const M1Array& a, const M1Array& b, M1Array* out, uint32_t row_dim_x, uint32_t inner_dim, uint32_t col_dim_x) {
+  // MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim}, "matmul_naive");
+  if (row_dim_x < 64 || col_dim_x < 64 || inner_dim < 8) {
+    MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim}, "matmul_naive");
+  } else {
+    MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim, 16, 8, 4, 8}, "gemm_opt");
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

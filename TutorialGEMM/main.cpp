@@ -20,10 +20,13 @@ static const int loop_count = 10;
 int main() {
     float microsec_per_call;
     vector< tuple<uint, uint, uint> > matrix_size_vec = {
-        // {1024, 1024, 1024}, 
-        {72, 73, 74},
-        {64, 4096, 1024},
-        {128, 128, 128}
+        {1024, 1024, 1024}, 
+        // {64, 64, 64}, 
+        // {72, 72, 72}, 
+        // {72, 73, 74}, 
+        // {74, 73, 72}, 
+        // {128, 128, 128},
+        // {64, 4096, 1024}
     };
     MTL::Device *device = MTL::CreateSystemDefaultDevice();
     for(const auto [rows_X, cols_X, inner_dim] : matrix_size_vec) {

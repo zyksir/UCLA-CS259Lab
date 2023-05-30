@@ -45,14 +45,13 @@ Now, you are good to go into next Step
 
 ### Compile
 
-Run `make && pip install -e .` can compile the project.
+Run `conda activate dlsys-needle-m1 && make && pip install -e .` can compile the project.
 
 ### Check Correctness
 
 Run `pytest` can check the correctness of your implementation. The whole `pytest` takes lots of time and these commands should work.
 
 ```bash
-conda activate dlsys-needle-m1
 pytest tests/test_ndarray.py
 pytest tests/test_nd_backend.py
 pytest tests/test_sequence_models.py

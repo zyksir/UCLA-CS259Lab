@@ -294,18 +294,19 @@ void MetalOperations::ReduceOp(MTL::Buffer *a,
 void MetalOperations::MatMul(MTL::Buffer *a,
                              MTL::Buffer *b,
                              MTL::Buffer *out,
-                             uint32_t M,
-                             uint32_t N,
-                             uint32_t P,
+                             GEMMParams params,
+                            //  uint32_t M,
+                            //  uint32_t N,
+                            //  uint32_t P,
                              const char *method)
 {
     // auto M_buffer = ScalarToMTLBuffer(M, _mDevice);
     // auto N_buffer = ScalarToMTLBuffer(N, _mDevice);
     // auto P_buffer = ScalarToMTLBuffer(P, _mDevice);
-    GEMMParams params{M, P, N};
+    // GEMMParams params{M, P, N, 16, 8, 4, 8};
     auto params_buffer = ScalarToMTLBuffer(params, _mDevice);
     std::vector<MTL::Buffer *> buffers = {a, b, out, params_buffer}; // , M_buffer, N_buffer, P_buffer};
-    Blocking2D(buffers, M, P, method);
+    Blocking2D(buffers, params.x_rows, params.x_cols, method);
     params_buffer->release();
     // M_buffer->release();
     // N_buffer->release();

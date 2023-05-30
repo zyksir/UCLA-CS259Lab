@@ -117,8 +117,8 @@ kernel void gemm_tiling(device const float* A,
     const uint row_dim_x = params.x_rows;
     const uint col_dim_x = params.x_cols;
     const uint inner_dim = params.x_inner;
-    const uint idx = id.x*4*params.TX; // column index of the corner in X.
-    const uint idy = id.y*4*params.TY; // row index of the corner in X.
+    const uint idx = id.x*params.TX; // column index of the corner in X.
+    const uint idy = id.y*params.TY; // row index of the corner in X.
     // Note: float4x4 uses column major: Asub[m][n] is row n of column m.
     float4x4 Asub[TY] = {{0.0f}};
     float4x4 Bsub[TX] = {{0.0f}};

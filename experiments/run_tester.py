@@ -11,14 +11,14 @@ def test_matmul(tester, m, n, p):
 
 if __name__ == "__main__":
     MATMUL_DIMS = [(128, 128, 128), (64, 4096, 1024)]
-    needle_cpu_tester = NeedleCPUTester()
+    # needle_cpu_tester = NeedleCPUTester()
     torch_cpu_tester = TorchCPUTester()
     needle_m1_tester = NeedleM1Tester()
     # torch_m1_tester = TorchM1Tester()
     # needle_cuda_tester = NeedleCUDATester()
     # torch_cuda_tester = TorchCUDATester()
     for m, n, p in MATMUL_DIMS:
-        test_matmul(needle_cpu_tester, m, n, p)
+        # test_matmul(needle_cpu_tester, m, n, p)
         test_matmul(torch_cpu_tester, m, n, p)
         test_matmul(needle_m1_tester, m, n, p)
         # test_matmul(torch_m1_tester, m, n, p)
