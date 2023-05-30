@@ -13,7 +13,6 @@ A class to manage all of the Metal objects this app creates.
 
 #include "Foundation/Foundation.hpp"
 #include "Metal/Metal.hpp"
-#include "ShaderParams.h"
 
 #include "map"
 
@@ -58,7 +57,7 @@ public:
     void ScalarOp(MTL::Buffer *a, scalar_t b, MTL::Buffer *out, size_t arrayLength, const char *method);
 
     // Matrix mulplication
-    void MatMul(MTL::Buffer *a, MTL::Buffer *b, MTL::Buffer *out, MatMulParams params, const char *method);
+    void MatMul(MTL::Buffer *a, MTL::Buffer *b, MTL::Buffer *out, uint32_t M, uint32_t N, uint32_t P, const char *method);
 
     // Reduce operation
     void ReduceOp(MTL::Buffer *a, MTL::Buffer *out, size_t reduce_size, size_t arrayLength, const char *method);

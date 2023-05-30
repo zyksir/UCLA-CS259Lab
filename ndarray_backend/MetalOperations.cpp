@@ -145,15 +145,11 @@ void MetalOperations::Blocking2D(std::vector<MTL::Buffer *> buffers,
     {
         computeEncoder->setBuffer(buffers[i], 0, i);
     }
-    MatMulParams* params = static_cast<MatMulParams*>(buffers[3]->contents());
 
     // Both of these values must be the same!
-    const int x_threads_per_group = params->blockSize;
-    const int y_threads_per_group = params->blockSize;
-    const int y_submat_dim = params->tP;
-    const int x_submat_dim = params->tN;
-    columns = (columns + x_submat_dim - 1)/x_submat_dim;
-    rows = (rows + y_submat_dim - 1)/y_submat_dim;
+    const int x_threads_per_group = 8;
+    const int y_threads_per_group = 8;
+    assert(x_threads_per_group == y_threads_per_group);
     
     // The number of thread groups (i.e., blocks) per grid.
     const int x_group_count = (columns + x_threads_per_group - 1) / x_threads_per_group;
@@ -294,22 +290,17 @@ void MetalOperations::ReduceOp(MTL::Buffer *a,
 void MetalOperations::MatMul(MTL::Buffer *a,
                              MTL::Buffer *b,
                              MTL::Buffer *out,
-                             MatMulParams params,
-                            //  uint32_t M,
-                            //  uint32_t N,
-                            //  uint32_t P,
+                             uint32_t M,
+                             uint32_t N,
+                             uint32_t P,
                              const char *method)
 {
-    auto param_buffer = ScalarToMTLBuffer(params, _mDevice);
-    std::vector<MTL::Buffer *> buffers = {a, b, out, param_buffer};
-    Blocking2D(buffers, params.M, params.P, method);
-    param_buffer->release();
-    // auto M_buffer = ScalarToMTLBuffer(M, _mDevice);
-    // auto N_buffer = ScalarToMTLBuffer(N, _mDevice);
-    // auto P_buffer = ScalarToMTLBuffer(P, _mDevice);
-    // std::vector<MTL::Buffer *> buffers = {a, b, out, M_buffer, N_buffer, P_buffer};
-    // Blocking2D(buffers, M, P, method);
-    // M_buffer->release();
-    // N_buffer->release();
-    // P_buffer->release();
+    auto M_buffer = ScalarToMTLBuffer(M, _mDevice);
+    auto N_buffer = ScalarToMTLBuffer(N, _mDevice);
+    auto P_buffer = ScalarToMTLBuffer(P, _mDevice);
+    std::vector<MTL::Buffer *> buffers = {a, b, out, M_buffer, N_buffer, P_buffer};
+    Blocking2D(buffers, M, P, method);
+    M_buffer->release();
+    N_buffer->release();
+    P_buffer->release();
 }

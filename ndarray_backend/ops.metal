@@ -1,5 +1,4 @@
 #include <metal_stdlib>
-#include "ShaderParams.h"
 using namespace metal;
 
 typedef float scalar_t;
@@ -211,14 +210,12 @@ kernel void ewise_tanh(device const scalar_t* a [[buffer(0)]],
 kernel void matmul_naive(device const scalar_t* a [[buffer(0)]],
                          device const scalar_t* b [[buffer(1)]],
                          device scalar_t* out     [[buffer(2)]],
-                         constant MatMulParams* params [[buffer(3)]],
-                        //  device const uint32_t* M [[buffer(3)]],
-                        //  device const uint32_t* N [[buffer(4)]],
-                        //  device const uint32_t* P [[buffer(5)]],
+                         device const uint32_t* M [[buffer(3)]],
+                         device const uint32_t* N [[buffer(4)]],
+                         device const uint32_t* P [[buffer(5)]],
                          uint2 index              [[thread_position_in_grid]])
 {
-    int32_t j = index.x, i = index.y; // m = (*M), n = (*N), p = (*P);
-    int32_t m = params->M, n = params->N, p = params->P;
+    int32_t j = index.x, i = index.y, m = (*M), n = (*N), p = (*P);
 
     // Check if the thread is in-bounds.
     if ((i < m) && (j < p)) {
@@ -235,18 +232,17 @@ kernel void matmul_naive(device const scalar_t* a [[buffer(0)]],
 kernel void matmul_block(device const scalar_t* A [[buffer(0)]],
                          device const scalar_t* B [[buffer(1)]],
                          device scalar_t* out     [[buffer(2)]],
-                         constant MatMulParams* params [[buffer(3)]],
-                        //  device const uint32_t* M [[buffer(3)]],
-                        //  device const uint32_t* N [[buffer(4)]],
-                        //  device const uint32_t* P [[buffer(5)]],
+                         device const uint32_t* M [[buffer(3)]],
+                         device const uint32_t* N [[buffer(4)]],
+                         device const uint32_t* P [[buffer(5)]],
                          uint2 threadgroup_pos [[ threadgroup_position_in_grid ]],
                          uint2 local_thread_idx [[ thread_position_in_threadgroup ]])
 {
     // Note: be sure that this is set to the same value as "threads per group" in the calling code!
     const int BLOCK_SIZE = 8;
 
-    const uint32_t wB = params->P; // (*P);
-    const uint32_t wA = params->N; // (*N);
+    const uint32_t wB = (*P);
+    const uint32_t wA = (*N);
     
     // Block index
     const uint bx = threadgroup_pos.x;
@@ -314,63 +310,6 @@ kernel void matmul_block(device const scalar_t* A [[buffer(0)]],
     const int c = wB * BLOCK_SIZE * by + BLOCK_SIZE * bx;
     out[c + wB * ty + tx] = Csub; 
 }
-
-kernel void matmul_tiling(device const scalar_t* A [[buffer(0)]],
-                         device const scalar_t* B [[buffer(1)]],
-                         device scalar_t* X     [[buffer(2)]],
-                         constant MatMulParams* params [[buffer(3)]],
-                         uint2 id [[ thread_position_in_grid ]])
-{
-    // Note: matrices are in row-major order in the supplied backing arrays.
-    const uint row_dim_x = params->N;
-    const uint col_dim_x = params->P;
-    const uint inner_dim = params->M;
-    const uint idx = id.x*4; // column index of the corner in X.
-    const uint idy = id.y*8; // row index of the corner in X.
-    // Note: float4x4 uses column major: Asub[m][n] is row n of column m.
-    float4x4 Asub(0.0f);
-    float4x4 Bsub(0.0f);
-    float4x4 Xsub(0.0f);
-    float4x4 Asub2(0.0f);
-    float4x4 Xsub2(0.0f);
-    // bounds check can potentially be removed but does not seem to affect performance
-    if ((idx < col_dim_x) && (idy < row_dim_x)) {
-        uint k = 0;
-        while (k < inner_dim) {
-            // Read the values into the 4x4 submatrices.
-            for (uint i = 0; i < 4; ++i) { // row offset into X
-                for (uint j = 0; j < 4; ++j) { // column offset into X
-                    // corresponds to A[idy + i, k + j]
-                    Asub[j][i] = A[(idy + i)*inner_dim + k + j];
-                }
-            }
-            for (uint i = 0; i < 4; ++i) { // row offset into X
-                for (uint j = 0; j < 4; ++j) { // column offset into X
-                    // corresponds to B[k + i, idx + j]
-                    Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
-                }
-            }
-            for (uint i = 0; i < 4; ++i) { // row offset into X
-                for (uint j = 0; j < 4; ++j) { // column offset into X
-                    // corresponds to A[idy + i + 4, k + j]
-                    Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
-                }
-            }
-            // Multiply the 4x4 submatrices and accumulate the result.
-            Xsub += Asub * Bsub;
-            Xsub2 += Asub2 * Bsub;
-            k += 4;
-        }
-        // Write out the results.
-        for (uint i = 0; i < 4; ++i) { // row offset into X
-            for (uint j = 0; j < 4; ++j) { // column offset into X
-                X[(idy + i)*col_dim_x + idx + j] = Xsub[j][i];
-                X[(idy + i + 4)*col_dim_x + idx + j] = Xsub2[j][i];
-            }
-        }
-    }
-}
-
 
 
 ////////////////////////////////////////////////////////////////////////////////
