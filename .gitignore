@@ -37,6 +37,7 @@
 *.x
 *.dSYM
 .DS_Store
+*metalar
 
 *.csv
 *local*

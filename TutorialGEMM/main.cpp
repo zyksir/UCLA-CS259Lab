@@ -21,11 +21,14 @@ int main() {
     float microsec_per_call;
     vector< tuple<uint, uint, uint> > matrix_size_vec = {
         // {1024, 1024, 1024}, 
-        {73, 73, 73},
-        // {128, 128, 128}
+        {72, 73, 74},
+        {64, 4096, 1024},
+        {128, 128, 128}
     };
     MTL::Device *device = MTL::CreateSystemDefaultDevice();
     for(const auto [rows_X, cols_X, inner_dim] : matrix_size_vec) {
+        cout << "------------------------------" << endl;
+        cout << "Problem Size" << rows_X << "\t" << cols_X << "\t" << inner_dim << endl;
         GEMMRunner runner(device);
         runner.initialize_data(rows_X, cols_X, inner_dim);
 

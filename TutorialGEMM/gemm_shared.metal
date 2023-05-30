@@ -7,6 +7,7 @@
 
 #include <metal_stdlib>
 #include "gemm_params.h"
+#include "macros.h"
 using namespace metal;
  
 /**
@@ -19,7 +20,55 @@ using namespace metal;
  * - All matrix dimensions must be an integer multiple of the block size.
  *
  */
-kernel void gemm_shared(device const float* inA,
+kernel void gemm_shared(device const float* A,
+                        device const float* B,
+                        device float* X,
+                        constant GEMMParams& params,
+                        uint2 blockIdx [[ threadgroup_position_in_grid ]],
+                        uint2 threadIdx [[ thread_position_in_threadgroup ]],
+                        uint2 blockDim [[ threads_per_threadgroup ]],
+                        uint2 id [[ thread_position_in_grid ]])
+{
+  const int BX = 8, BZ = 8, BY = 8;
+  const int N = params.x_rows, M = params.x_cols, K = params.x_inner;
+  threadgroup float bA[BX*BZ];
+  threadgroup float bB[BY*BZ];
+  // change m and n. in M1, threadIdx.x means col
+	int m = id.x;
+	int n = id.y; 
+
+  float sum = 0;
+  for(int k = 0; k < K; k+=BZ) {
+    // if (n < N && k+threadIdx.x < K) {
+    //   Val(bA, threadIdx.y, threadIdx.x, BZ) = Val(A, n, k+threadIdx.x, K);
+    // }
+    // if (m < M && k+threadIdx.y< K) {
+    //   Val(bB, threadIdx.x, threadIdx.y, BZ) = Val(B, k+threadIdx.y, m, M);
+    // }
+    for(int kk = threadIdx.x; kk < BZ; kk+=blockDim.x) {
+      if (n >= N || k+kk >= K) break;
+      Val(bA, threadIdx.y, kk, BZ) = Val(A, n, k+kk, K);
+    }
+
+    for(int kk = threadIdx.y; kk < BZ; kk+=blockDim.y) {
+      if (m >= M || k+kk >= K) break;
+      Val(bB, threadIdx.x, kk, BZ) = Val(B, k+kk, m, M);
+    }
+    threadgroup_barrier(mem_flags::mem_none);
+
+    if (n < N && m < M) {
+      for(int kk = 0; kk < BZ && kk < K - k; ++kk) {
+        sum += Val(bA, threadIdx.y, kk, BZ) * Val(bB, threadIdx.x, kk, BZ);
+      }
+    }
+    threadgroup_barrier(mem_flags::mem_none);
+  }
+  if (n < N && m < M) {
+    Val(X, n, m, M) = sum;
+  }
+}
+
+kernel void _gemm_shared(device const float* inA,
                         device const float* inB,
                         device float* result,
                         constant GEMMParams& params,

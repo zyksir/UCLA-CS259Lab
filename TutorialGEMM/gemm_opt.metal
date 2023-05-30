@@ -59,19 +59,31 @@ kernel void gemm_opt(device const float* A,
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to A[idy + i, k + j]
-                    Asub[j][i] = A[(idy + i)*inner_dim + k + j];
+                    if (idy+i < row_dim_x && k+j < inner_dim) {
+                        Asub[j][i] = A[(idy + i)*inner_dim + k + j];
+                    } else {
+                        Asub[j][i] = 0;
+                    }
                 }
             }
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to B[k + i, idx + j]
-                    Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
+                    if (k+i<inner_dim && idx + j < col_dim_x) {
+                        Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
+                    } else {
+                        Bsub[j][i] = 0;
+                    }
                 }
             }
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to A[idy + i + 4, k + j]
-                    Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
+                    if (idy+i+4 < row_dim_x && k+j < inner_dim) {
+                        Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
+                    } else {
+                        Asub2[j][i] = 0;
+                    }
                 }
             }
             // Multiply the 4x4 submatrices and accumulate the result.
@@ -82,8 +94,12 @@ kernel void gemm_opt(device const float* A,
         // Write out the results.
         for (uint i = 0; i < 4; ++i) { // row offset into X
             for (uint j = 0; j < 4; ++j) { // column offset into X
-                X[(idy + i)*col_dim_x + idx + j] = Xsub[j][i];
-                X[(idy + i + 4)*col_dim_x + idx + j] = Xsub2[j][i];
+                if (idy+i<row_dim_x && idx + j < col_dim_x) {
+                    X[(idy + i)*col_dim_x + idx + j] = Xsub[j][i];
+                }
+                if (idy+i+4<row_dim_x && idx + j < col_dim_x) {
+                    X[(idy + i + 4)*col_dim_x + idx + j] = Xsub2[j][i];
+                }
             }
         }
     }
