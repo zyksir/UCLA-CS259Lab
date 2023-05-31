@@ -146,18 +146,23 @@ void EwiseTanh(const M1Array& a, M1Array* out) {
 // Matrix mulplication
 ////////////////////////////////////////////////////////////////////////////////
 void Matmul(const M1Array& a, const M1Array& b, M1Array* out, uint32_t row_dim_x, uint32_t inner_dim, uint32_t col_dim_x) {
-  // this is cheating, but it has good performance
-  // Matrix<float> A(a.ptr, {static_cast<int>(row_dim_x), static_cast<int>(inner_dim)});
-  // Matrix<float> B(b.ptr, {static_cast<int>(inner_dim), static_cast<int>(col_dim_x)});
-  // Matrix<float> X_true(out->ptr, {static_cast<int>(row_dim_x), static_cast<int>(col_dim_x)});
-  // _mat_multiply_blas(X_true, A, B, 1.0f, 0.0f);
-  // return;
-  // MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim}, "matmul_naive");
   if (row_dim_x < 64 || col_dim_x < 64 || inner_dim < 8) {
     MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim}, "matmul_naive");
+  } else if ((row_dim_x & 7) == 0 && (col_dim_x & 3) == 0 && (inner_dim & 3) == 0) {
+    MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim, 16, 8, 4, 8}, "gemm_tiling");
   } else {
     MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim, 16, 8, 4, 8}, "gemm_opt");
   }
+
+  // // this is cheating, but it has good performance
+  // if ((row_dim_x & 7) == 0 && (col_dim_x & 3) == 0 && (inner_dim & 3) == 0) {
+  //   MetalOps->MatMul(a.array_MTL, b.array_MTL, out->array_MTL, {row_dim_x, col_dim_x, inner_dim, 16, 8, 4, 8}, "gemm_tiling");
+  // } else {
+  //   Matrix<float> A(a.ptr, {static_cast<int>(row_dim_x), static_cast<int>(inner_dim)});
+  //   Matrix<float> B(b.ptr, {static_cast<int>(inner_dim), static_cast<int>(col_dim_x)});
+  //   Matrix<float> X_true(out->ptr, {static_cast<int>(row_dim_x), static_cast<int>(col_dim_x)});
+  //   _mat_multiply_blas(X_true, A, B, 1.0f, 0.0f);
+  // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -389,6 +389,66 @@ kernel void gemm_opt(device const float* A,
     }
 }
 
+kernel void gemm_tiling(device const float* A,
+                            device const float* B,
+                            device float* X,
+                            constant GEMMParams& params,
+                            uint2 id [[ thread_position_in_grid ]])
+{
+    constexpr int TX = 1;
+    constexpr int TY = 2;
+    // Note: matrices are in row-major order in the supplied backing arrays.
+    const uint row_dim_x = params.x_rows;
+    const uint col_dim_x = params.x_cols;
+    const uint inner_dim = params.x_inner;
+    const uint idx = id.x*params.TX; // column index of the corner in X.
+    const uint idy = id.y*params.TY; // row index of the corner in X.
+    // Note: float4x4 uses column major: Asub[m][n] is row n of column m.
+    float4x4 Asub[TY] = {{0.0f}};
+    float4x4 Bsub[TX] = {{0.0f}};
+    float4x4 Xsub[TY][TX] = {{{0.0f}}};
+    // bounds check can potentially be removed but does not seem to affect performance
+    if ((idx < col_dim_x) && (idy < row_dim_x)) {
+        uint k = 0;
+        while (k < inner_dim) {
+            // Read the values into the 4x4 submatrices.
+            for(int ty = 0; ty < TY; ++ty) {
+                for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < 4; ++j) { // column offset into X
+                    // corresponds to A[idy + i, k + j]
+                    Asub[ty][j][i] = A[(idy + i + 4*ty)*inner_dim + k + j];
+                }
+                }
+            }
+            for(int tx = 0; tx < TX; ++tx) {
+                for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < 4; ++j) { // column offset into X
+                    // corresponds to B[k + i, idx + j]
+                    Bsub[tx][j][i] = B[(k + i)*col_dim_x + idx + j + 4*tx];
+                }
+                }
+            }
+
+            for(int tx = 0; tx < TX; ++tx) {
+            for(int ty = 0; ty < TY; ++ty) {
+                Xsub[ty][tx] += Asub[ty] * Bsub[tx];
+            }
+            }
+            k += 4;
+        }
+        // Write out the results.
+        for (uint i = 0; i < 4; ++i) { // row offset into X
+        for (uint j = 0; j < 4; ++j) { // column offset into X
+            for(int tx = 0; tx < TX; ++tx) {
+            for(int ty = 0; ty < TY; ++ty) {
+                X[(idy + i + 4*ty)*col_dim_x + idx + j + 4*tx] = Xsub[ty][tx][j][i];
+            }
+            }
+        }
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Max and sum reductions
 ////////////////////////////////////////////////////////////////////////////////

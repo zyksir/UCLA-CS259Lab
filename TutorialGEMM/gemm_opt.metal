@@ -52,44 +52,57 @@ kernel void gemm_opt(device const float* A,
     float4x4 Asub2(0.0f);
     float4x4 Xsub2(0.0f);
     // bounds check can potentially be removed but does not seem to affect performance
-    if ((idx < col_dim_x) && (idy < row_dim_x)) {
+    if ((idx >= col_dim_x) || (idy >= row_dim_x)) return;
+
+    if ((idx+4 < col_dim_x) && (idy+4 < row_dim_x)) {
         uint k = 0;
-        while (k < inner_dim) {
+        while (k+4 < inner_dim) {
             // Read the values into the 4x4 submatrices.
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to A[idy + i, k + j]
-                    if (idy+i < row_dim_x && k+j < inner_dim) {
-                        Asub[j][i] = A[(idy + i)*inner_dim + k + j];
-                    } else {
-                        Asub[j][i] = 0;
-                    }
+                    Asub[j][i] = A[(idy + i)*inner_dim + k + j];
                 }
             }
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to B[k + i, idx + j]
-                    if (k+i<inner_dim && idx + j < col_dim_x) {
-                        Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
-                    } else {
-                        Bsub[j][i] = 0;
-                    }
+                    Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
                 }
             }
             for (uint i = 0; i < 4; ++i) { // row offset into X
                 for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to A[idy + i + 4, k + j]
-                    if (idy+i+4 < row_dim_x && k+j < inner_dim) {
-                        Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
-                    } else {
-                        Asub2[j][i] = 0;
-                    }
+                    Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
                 }
             }
             // Multiply the 4x4 submatrices and accumulate the result.
             Xsub += Asub * Bsub;
             Xsub2 += Asub2 * Bsub;
             k += 4;
+        }
+        if (k < inner_dim) {
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < inner_dim-k; ++j) { // column offset into X
+                    // corresponds to A[idy + i, k + j]
+                    Asub[j][i] = A[(idy + i)*inner_dim + k + j];
+                }
+            }
+            for (uint i = 0; i < inner_dim-k; ++i) { // row offset into X
+                for (uint j = 0; j < 4; ++j) { // column offset into X
+                    // corresponds to B[k + i, idx + j]
+                    Bsub[j][i] = B[(k + i)*col_dim_x + idx + j];
+                }
+            }
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < inner_dim-k; ++j) { // column offset into X
+                    // corresponds to A[idy + i + 4, k + j]
+                    Asub2[j][i] = A[(idy + i + 4)*inner_dim + k + j];
+                }
+            }
+            // Multiply the 4x4 submatrices and accumulate the result.
+            Xsub += Asub * Bsub;
+            Xsub2 += Asub2 * Bsub;
         }
         // Write out the results.
         for (uint i = 0; i < 4; ++i) { // row offset into X
