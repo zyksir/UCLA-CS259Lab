@@ -42,6 +42,11 @@ int main() {
         runner.print_performance_result(microsec_per_call, "cpu blas");
 
         cout << "******************************" << endl;
+        microsec_per_call = benchmark(loop_count, [&]() { runner.run_gemm_on_cpu(mat_multiply_vdsp); });
+        runner.print_performance_result(microsec_per_call, "cpu vDSP");
+        cout << "******************************" << endl;
+
+        cout << "******************************" << endl;
         runner.change_shader("gemm_naive");
         GEMMParams naive_params{rows_X, cols_X, inner_dim};
         runner.run_gemm_on_gpu(naive_params); 

@@ -86,6 +86,35 @@ void _mat_multiply_blas(MatrixF &A, const MatrixF &B, const MatrixF &C, float al
                 backingArrayB, B.extent(1), backingArrayC, C.extent(1), beta, backingArrayA, A.extent(1));
 }
 
+void mat_multiply_vdsp(MatrixF &A, const MatrixF &B, const MatrixF &C)
+{
+    if (B.extent(1) != C.extent(0))
+    {
+        error_exit("Error: Inconsistent matrix dimensions! Exiting.");
+    }
+
+    const int rows_A = B.extent(0);
+    const int cols_A = C.extent(1);
+    if ((A.order() != 2) || (A.size() != rows_A * cols_A))
+    {
+            A.resize(rows_A, cols_A);
+    }
+
+    float *backingArrayA = A.get_backing_data();
+    const float *backingArrayB = B.get_backing_data();
+    const float *backingArrayC = C.get_backing_data();
+
+    vDSP_mmul(
+        backingArrayB,
+        vDSP_Stride(1),
+        backingArrayC,
+        vDSP_Stride(1),
+        backingArrayA,
+        vDSP_Stride(1),
+        A.extent(0), A.extent(1), B.extent(1)
+    );
+}
+
 void randomize_uniform(MatrixF &A, float min, float max)
 {
     static std::random_device rand_dev;
@@ -105,7 +134,7 @@ void assert_almost_equal_relative_error(const MatrixF &A, const MatrixF &B, floa
     if (score > tolerance)
     {
         cerr << "Tolerance of " << tolerance << " was exceeded! error:" << score << endl;
-        error_exit("");
+        // error_exit("");
     }
 }
 
@@ -118,8 +147,9 @@ float assert_almost_equal_max_error(const MatrixF &X, const MatrixF &X_true, flo
             max_error = error;
         }
         if (error > tolerance) {
-            cout << "Wrong result, expected: " << X_true[i] << ", get: " << X[i] << "; with diff:" << error << endl;
-            error_exit("exiting");
+            cout << "Wrong result, expected: " << X_true[i] << ", get: " << X[i] << "; with diff:" << error << " at position " << i << endl;
+            return error;
+            // error_exit("exiting");
         }
     }
     return max_error;

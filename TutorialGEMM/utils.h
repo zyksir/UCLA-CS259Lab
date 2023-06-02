@@ -98,6 +98,16 @@ void mat_multiply_blas(MatrixF &A, const MatrixF &B, const MatrixF &C);
 void _mat_multiply_blas(MatrixF &A, const MatrixF &B, const MatrixF &C, float alpha, float beta);
 
 /**
+ * Compute A = B*C using an optimized vDSP function.
+ *
+ * @param A The result is returned in this matrix, which will be resized to the appropriate dimensions
+ * if necessary.
+ * @param B Input matrix which is not modified.
+ * @param C Input matrix which is not modified.
+ */
+void mat_multiply_vdsp(MatrixF &A, const MatrixF &B, const MatrixF &C);
+
+/**
  * Set all values to be uniformly disstributed random values in [min, max].
  *
  */
