@@ -9,13 +9,13 @@ class NeedleCPUTester(Tester):
         self.name = "needle_cpu_tester"
     
     def _matmul_data(self, m, n, p):
-        super(NeedleCPUTester, self)._matmul_data(m, n, p)
-        self.A = ndl.Tensor(nd.array(self._A), device=self.device)
-        self.B = ndl.Tensor(nd.array(self._B), device=self.device)
+        # super(NeedleCPUTester, self)._matmul_data(m, n, p)
         return 2*m*n*p
     
-    def _matmul(self):
-        self.A @ self.B
+    def _matmul(self,A, B):
+        self.A = ndl.Tensor(nd.array(A), device=self.device)
+        self.B = ndl.Tensor(nd.array(B), device=self.device)
+        return A @ B
     
     def _conv_data(self, Z_shape, W_shape, stride, padding):
         super(NeedleCPUTester, self)._conv_data(Z_shape, W_shape, stride, padding)

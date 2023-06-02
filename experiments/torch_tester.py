@@ -10,12 +10,14 @@ class TorchCPUTester(Tester):
     
     def _matmul_data(self, m, n, p):
         super(TorchCPUTester, self)._matmul_data(m, n, p)
-        self.A = torch.from_numpy(self._A).to(self.device)
-        self.B = torch.from_numpy(self._B).to(self.device)
         return m*n*p
     
-    def _matmul(self):
-        self.A @ self.B
+    # def _matmul(self):
+    #     self.A @ self.B
+    def _matmul(self, A, B):
+        self.A = torch.from_numpy(self._A).to(self.device)
+        self.B = torch.from_numpy(self._B).to(self.device)
+        return A @ B
     
     def _conv_data(self, Z_shape, W_shape, stride, padding):
         super(TorchCPUTester, self)._conv_data(Z_shape, W_shape, stride, padding)

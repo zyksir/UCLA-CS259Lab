@@ -13,7 +13,7 @@ class Tester:
     def _matmul_data(self, m, n, p):
         self._A = np.random.randn(m, n).astype(np.float32)
         self._B = np.random.randn(n, p).astype(np.float32)
-        return 0
+        return self._A, self._B
 
     @abstractmethod
     def _matmul(self):
