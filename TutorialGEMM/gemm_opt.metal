@@ -142,16 +142,18 @@ kernel void gemm_tiling(device const float* A,
         while (k < inner_dim) {
             // Read the values into the 4x4 submatrices.
             for(int ty = 0; ty < TY; ++ty) {
-                for (uint i = 0; i < 4; ++i) { // row offset into X
-                    // corresponds to A[idy + i, k + j]
-                    Asub[ty][i].xyzw = *(device float4*)&A[(idy + i + 4*ty)*inner_dim + k];
-                }
+                // corresponds to A[idy + i, k + j]
+                Asub[ty][0].xyzw = *(device const float4*)&A[(idy + 0 + 4*ty)*inner_dim + k];
+                Asub[ty][1].xyzw = *(device const float4*)&A[(idy + 1 + 4*ty)*inner_dim + k];
+                Asub[ty][2].xyzw = *(device const float4*)&A[(idy + 2 + 4*ty)*inner_dim + k];
+                Asub[ty][3].xyzw = *(device const float4*)&A[(idy + 3 + 4*ty)*inner_dim + k];
             }
             for(int tx = 0; tx < TX; ++tx) {
-                for (uint i = 0; i < 4; ++i) { // row offset into X
-                    // corresponds to B[k + i, idx + j]
-                    Bsub[tx][i].xyzw = *(device float4*)&B[(k + i)*col_dim_x + idx + 4*tx];
-                }
+                // corresponds to B[k + i, idx + j]
+                Bsub[tx][0].xyzw = *(device const float4*)&B[(k + 0)*col_dim_x + idx + 4*tx];
+                Bsub[tx][1].xyzw = *(device const float4*)&B[(k + 1)*col_dim_x + idx + 4*tx];
+                Bsub[tx][2].xyzw = *(device const float4*)&B[(k + 2)*col_dim_x + idx + 4*tx];
+                Bsub[tx][3].xyzw = *(device const float4*)&B[(k + 3)*col_dim_x + idx + 4*tx];
             }
 
             for(int tx = 0; tx < TX; ++tx) {
@@ -165,9 +167,10 @@ kernel void gemm_tiling(device const float* A,
 
         for(int tx = 0; tx < TX; ++tx) {
         for(int ty = 0; ty < TY; ++ty) {
-            for (uint i = 0; i < 4; ++i) { // row offset into X
-                *(device float4*)&X[(idy + i + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][i].xyzw;
-            }
+            *(device float4*)&X[(idy + 0 + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][0].xyzw;
+            *(device float4*)&X[(idy + 1 + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][1].xyzw;
+            *(device float4*)&X[(idy + 2 + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][2].xyzw;
+            *(device float4*)&X[(idy + 3 + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][3].xyzw;
         }
         }
     }
