@@ -143,35 +143,30 @@ kernel void gemm_tiling(device const float* A,
             // Read the values into the 4x4 submatrices.
             for(int ty = 0; ty < TY; ++ty) {
                 for (uint i = 0; i < 4; ++i) { // row offset into X
-                for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to A[idy + i, k + j]
-                    Asub[ty][j][i] = A[(idy + i + 4*ty)*inner_dim + k + j];
-                }
+                    Asub[ty][i].xyzw = *(device float4*)&A[(idy + i + 4*ty)*inner_dim + k];
                 }
             }
             for(int tx = 0; tx < TX; ++tx) {
                 for (uint i = 0; i < 4; ++i) { // row offset into X
-                for (uint j = 0; j < 4; ++j) { // column offset into X
                     // corresponds to B[k + i, idx + j]
-                    Bsub[tx][j][i] = B[(k + i)*col_dim_x + idx + j + 4*tx];
-                }
+                    Bsub[tx][i].xyzw = *(device float4*)&B[(k + i)*col_dim_x + idx + 4*tx];
                 }
             }
 
             for(int tx = 0; tx < TX; ++tx) {
             for(int ty = 0; ty < TY; ++ty) {
-                Xsub[ty][tx] += Asub[ty] * Bsub[tx];
+                Xsub[ty][tx] +=  Bsub[tx] * Asub[ty];
             }
             }
             k += 4;
         }
         // Write out the results.
-        for (uint i = 0; i < 4; ++i) { // row offset into X
-        for (uint j = 0; j < 4; ++j) { // column offset into X
-            for(int tx = 0; tx < TX; ++tx) {
-            for(int ty = 0; ty < TY; ++ty) {
-                X[(idy + i + 4*ty)*col_dim_x + idx + j + 4*tx] = Xsub[ty][tx][j][i];
-            }
+
+        for(int tx = 0; tx < TX; ++tx) {
+        for(int ty = 0; ty < TY; ++ty) {
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                *(device float4*)&X[(idy + i + 4*ty)*col_dim_x + idx + 4*tx] = Xsub[ty][tx][i].xyzw;
             }
         }
         }

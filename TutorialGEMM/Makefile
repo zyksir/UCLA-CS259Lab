@@ -10,13 +10,13 @@ SRCS := $(wildcard *.cpp) $(wildcard *.h) $(wildcard *.hpp)
 all: main
 	
 gemm_naive: ./gemm_naive.metal
-	xcrun -sdk macosx metal -c $@.metal -o $@.air
+	xcrun -sdk macosx metal -O3 -c $@.metal -o $@.air
 
 gemm_shared: ./gemm_shared.metal
-	xcrun -sdk macosx metal -c $@.metal -o $@.air
+	xcrun -sdk macosx metal -O3 -c $@.metal -o $@.air
 
 gemm_opt: ./gemm_opt.metal
-	xcrun -sdk macosx metal -c $@.metal -o $@.air
+	xcrun -sdk macosx metal -O3 -c $@.metal -o $@.air
 
 src: $(SRCS)
 

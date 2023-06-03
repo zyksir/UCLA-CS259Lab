@@ -20,7 +20,7 @@ static const int loop_count = 10;
 int main() {
     float microsec_per_call;
     vector< tuple<uint, uint, uint> > matrix_size_vec = {
-        {1024, 1024, 1024}, 
+        {2048, 2048, 2048}, 
         // {64, 64, 64}, 
         // {72, 72, 72}, 
         // {72, 73, 74}, 
