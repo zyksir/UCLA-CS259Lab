@@ -9,12 +9,16 @@ class Tester:
         self.num_repeats = 100
         pass
 
-    @abstractmethod
-    def _matmul_data(self, m, n, p):
-        self._A = np.random.randn(m, n).astype(np.float32)
-        self._B = np.random.randn(n, p).astype(np.float32)
-        return 0
+    @staticmethod
+    def generate_random_matmul_data(m, n, p):
+        A = np.random.randn(m, n).astype(np.float32)
+        B = np.random.randn(n, p).astype(np.float32)
+        return A, B
 
+    @abstractmethod
+    def _matmul_data(self, A, B):
+        return
+    
     @abstractmethod
     def _matmul(self):
         return

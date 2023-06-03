@@ -8,14 +8,13 @@ class TorchCPUTester(Tester):
         self.device = "cpu"
         self.name = "torch_cpu_tester"
     
-    def _matmul_data(self, m, n, p):
-        super(TorchCPUTester, self)._matmul_data(m, n, p)
-        self.A = torch.from_numpy(self._A).to(self.device)
-        self.B = torch.from_numpy(self._B).to(self.device)
+    def _matmul_data(self, m, n, p, A, B):
+        self.A = torch.from_numpy(A).to(self.device)
+        self.B = torch.from_numpy(B).to(self.device)
         return m*n*p
     
     def _matmul(self):
-        self.A @ self.B
+        return self.A @ self.B
     
     def _conv_data(self, Z_shape, W_shape, stride, padding):
         super(TorchCPUTester, self)._conv_data(Z_shape, W_shape, stride, padding)
