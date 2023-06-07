@@ -75,6 +75,16 @@ int main() {
 
         // using the optimal setting by others
         cout << "******************************" << endl;
+        runner.change_shader("gemm_opt2");
+        GEMMParams opt2_params{rows_X, cols_X, inner_dim, 16, 8, 4, 8};
+        runner.run_gemm_on_gpu(opt2_params); 
+        runner.check_results();
+        microsec_per_call = benchmark(loop_count, [&]() { runner.run_gemm_on_gpu(opt2_params); });
+        runner.print_performance_result(microsec_per_call, "m1 opt");
+        cout << "******************************" << endl;
+
+        // using the optimal setting by others
+        cout << "******************************" << endl;
         runner.change_shader("gemm_tiling");
         GEMMParams tiling_params{rows_X, cols_X, inner_dim, 16, 8, 4, 8};
         runner.run_gemm_on_gpu(tiling_params); 

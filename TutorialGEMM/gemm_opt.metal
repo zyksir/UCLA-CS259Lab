@@ -118,6 +118,79 @@ kernel void gemm_opt(device const float* A,
     }
 }
 
+kernel void gemm_opt2(device const float* A,
+                            device const float* B,
+                            device float* X,
+                            constant GEMMParams& params,
+                            uint2 id [[ thread_position_in_grid ]])
+{
+    // Note: matrices are in row-major order in the supplied backing arrays.
+    const uint row_dim_x = params.x_rows;
+    const uint col_dim_x = params.x_cols;
+    const uint inner_dim = params.x_inner;
+    const uint idx = id.x*4; // column index of the corner in X.
+    const uint idy = id.y*8; // row index of the corner in X.
+    // Note: float4x4 uses column major: Asub[m][n] is row n of column m.
+    float4x4 Asub(0.0f);
+    float4x4 Bsub(0.0f);
+    float4x4 Xsub(0.0f);
+    float4x4 Asub2(0.0f);
+    float4x4 Xsub2(0.0f);
+    // bounds check can potentially be removed but does not seem to affect performance
+    if ((idx >= col_dim_x) || (idy >= row_dim_x)) return;
+
+    if ((idx+4 < col_dim_x) && (idy+4 < row_dim_x)) {
+        uint k = 0;
+        while (k+4 < inner_dim) {
+            // Read the values into the 4x4 submatrices.
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                // corresponds to A[idy + i, k + j], j = 0 to 4
+                Asub[i] = *(device const float4*)&A[(idy + i)*inner_dim + k];
+                // corresponds to B[k + i, idx + j], j = 0 to 4
+                Bsub[i] = *(device const float4*)&B[(k + i)*col_dim_x + idx];
+                // corresponds to A[idy + i + 4, k + j], j = 0 to 4
+                Asub2[i] = *(device const float4*)&A[(idy + i + 4)*inner_dim + k];
+            }
+            // Multiply the 4x4 submatrices and accumulate the result.
+            // because they are row-major, multiply is reversed.
+            Xsub += Bsub * Asub;
+            Xsub2 += Bsub * Asub2;
+            k += 4;
+        }
+        if (k < inner_dim) {
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < inner_dim-k; ++j) { // column offset into X
+                    // corresponds to A[idy + i, k + j]
+                    Asub[i][j] = A[(idy + i)*inner_dim + k + j];
+                }
+            }
+            for (uint i = 0; i < inner_dim-k; ++i) { // row offset into X
+                for (uint j = 0; j < 4; ++j) { // column offset into X
+                    // corresponds to B[k + i, idx + j]
+                    Bsub[i][j] = B[(k + i)*col_dim_x + idx + j];
+                }
+            }
+            for (uint i = 0; i < 4; ++i) { // row offset into X
+                for (uint j = 0; j < inner_dim-k; ++j) { // column offset into X
+                    // corresponds to A[idy + i + 4, k + j]
+                    Asub2[i][j] = A[(idy + i + 4)*inner_dim + k + j];
+                }
+            }
+            // Multiply the 4x4 submatrices and accumulate the result.
+            // because they are row-major, multiply is reversed.
+            Xsub += Bsub * Asub;
+            Xsub2 += Bsub * Asub2;
+        }
+        
+        // given: (idx+4 < col_dim_x) && (idy+4 < row_dim_x)
+        // Write out the results.
+        for (uint i = 0; i < 4; ++i) { // row offset into X
+            *(device float4*)&X[(idy + i)*col_dim_x + idx] = Xsub[i];
+            *(device float4*)&X[(idy + i + 4)*col_dim_x + idx] = Xsub2[i];
+        }
+    }
+}
+
 kernel void gemm_tiling(device const float* A,
                             device const float* B,
                             device float* X,
