@@ -43,7 +43,7 @@ class Tester:
         for _ in range(self.num_repeats):
             func()
         time_spent = time.time() - start
-        gflops = count/time_spent*1e-6
+        gflops = count/time_spent*1e-9*self.num_repeats
         print(f"Time: {time_spent:.2f}s, GLOPS: {gflops:.2f}gflops")
         print("**************************")
 
