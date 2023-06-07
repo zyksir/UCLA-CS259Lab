@@ -143,14 +143,22 @@ kernel void gemm_opt2(device const float* A,
         uint k = 0;
         while (k+4 < inner_dim) {
             // Read the values into the 4x4 submatrices.
-            for (uint i = 0; i < 4; ++i) { // row offset into X
-                // corresponds to A[idy + i, k + j], j = 0 to 4
-                Asub[i] = *(device const float4*)&A[(idy + i)*inner_dim + k];
-                // corresponds to B[k + i, idx + j], j = 0 to 4
-                Bsub[i] = *(device const float4*)&B[(k + i)*col_dim_x + idx];
-                // corresponds to A[idy + i + 4, k + j], j = 0 to 4
-                Asub2[i] = *(device const float4*)&A[(idy + i + 4)*inner_dim + k];
-            }
+            // corresponds to A[idy + i, k + j], j = 0 to 4
+            Asub[0] = *(device const float4*)&A[(idy + 0)*inner_dim + k];
+            Asub[1] = *(device const float4*)&A[(idy + 1)*inner_dim + k];
+            Asub[2] = *(device const float4*)&A[(idy + 2)*inner_dim + k];
+            Asub[3] = *(device const float4*)&A[(idy + 3)*inner_dim + k];
+            // corresponds to B[k + i, idx + j], j = 0 to 4
+            Bsub[0] = *(device const float4*)&B[(k + 0)*col_dim_x + idx];
+            Bsub[1] = *(device const float4*)&B[(k + 1)*col_dim_x + idx];
+            Bsub[2] = *(device const float4*)&B[(k + 2)*col_dim_x + idx];
+            Bsub[3] = *(device const float4*)&B[(k + 3)*col_dim_x + idx];
+            // corresponds to A[idy + i + 4, k + j], j = 0 to 4
+            Asub2[0] = *(device const float4*)&A[(idy + 4)*inner_dim + k];
+            Asub2[1] = *(device const float4*)&A[(idy + 5)*inner_dim + k];
+            Asub2[2] = *(device const float4*)&A[(idy + 6)*inner_dim + k];
+            Asub2[3] = *(device const float4*)&A[(idy + 7)*inner_dim + k];
+
             // Multiply the 4x4 submatrices and accumulate the result.
             // because they are row-major, multiply is reversed.
             Xsub += Bsub * Asub;
@@ -184,10 +192,14 @@ kernel void gemm_opt2(device const float* A,
         
         // given: (idx+4 < col_dim_x) && (idy+4 < row_dim_x)
         // Write out the results.
-        for (uint i = 0; i < 4; ++i) { // row offset into X
-            *(device float4*)&X[(idy + i)*col_dim_x + idx] = Xsub[i];
-            *(device float4*)&X[(idy + i + 4)*col_dim_x + idx] = Xsub2[i];
-        }
+        *(device float4*)&X[(idy + 0)*col_dim_x + idx] = Xsub[0];
+        *(device float4*)&X[(idy + 1)*col_dim_x + idx] = Xsub[1];
+        *(device float4*)&X[(idy + 2)*col_dim_x + idx] = Xsub[2];
+        *(device float4*)&X[(idy + 3)*col_dim_x + idx] = Xsub[3];
+        *(device float4*)&X[(idy + 4)*col_dim_x + idx] = Xsub2[0];
+        *(device float4*)&X[(idy + 5)*col_dim_x + idx] = Xsub2[1];
+        *(device float4*)&X[(idy + 6)*col_dim_x + idx] = Xsub2[2];
+        *(device float4*)&X[(idy + 7)*col_dim_x + idx] = Xsub2[3];
     }
 }
 
