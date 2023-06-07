@@ -11,7 +11,7 @@ class TorchCPUTester(Tester):
     def _matmul_data(self, m, n, p, A, B):
         self.A = torch.from_numpy(A).to(self.device)
         self.B = torch.from_numpy(B).to(self.device)
-        return m*n*p
+        return 2*m*n*p
     
     def _matmul(self):
         return self.A @ self.B
