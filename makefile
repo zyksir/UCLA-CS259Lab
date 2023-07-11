@@ -1,6 +1,7 @@
 CXX = nvcc # specify your compiler here
-LDFLAGS += # specify your library linking options here
-CXXFLAGS += -std=c++11 -O3 $(LDFLAGS) # -g -G # --ptxas-options=-v
+CUDA_PATH   = /usr/local/cuda-11.7
+LDFLAGS += -L$(CUDA_PATH)/lib64 -lcudart -lcublas # specify your library linking options here
+CXXFLAGS += -std=c++11 -O3 $(LDFLAGS) -I$(CUDA_PATH)/targets/x86_64-linux/include # -g -G # --ptxas-options=-v
 LIBS = src/lib/*
 
 conv1: src/conv_runner.cu src/kernels/conv* $(LIBS)

@@ -5,6 +5,8 @@
 #include <cassert>
 #include <stdexcept>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <cublas_api.h>
 
 #include "lib/test.hpp"
 #include "lib/macros.cuh"
@@ -27,4 +29,12 @@ int main() {
   gemm_test.test_cuda(gemm_shared<BatchSize, Nii, Nnn, BatchSize, 64, 64>, "CUDA SHARED");
   gemm_test.test_cuda(gemm_block_tiling<BatchSize, Nii, Nnn, BatchSize, 64, 64, 2, 2>, "CUDA TILING");
   gemm_test.test_cuda(gemm_vectorize<BatchSize, Nii, Nnn, BatchSize, 64, 64, 2, 2>, "CUDA VECTERIZE");
+  auto cublas = [](const float* A, const float* B, float* C, dim3& grid, dim3& block) {
+    cublasHandle_t err; cublasCreate(&err);
+    cudaDeviceSynchronize();
+    static const float alpha = 1.0, beta = 0.0;
+    constexpr int M = BatchSize, N = Nnn, K = Nii;
+    cublasSgemm(err, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, B, N, A, K, &beta, C, N);
+  };
+  gemm_test.test_cuda(cublas, "CUBLAS");
 }

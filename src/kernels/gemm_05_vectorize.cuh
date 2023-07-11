@@ -16,8 +16,8 @@ __global__ void gemm_vectorize_kernel(const float *A, const float *B, float *C, 
 	const int ty = tidy*TY;
 	float tmp_z[TX*TY] = {0.0f};
 	for(int bk = 0; bk < K; bk += BZ) {
-		for(int k = tidy*4; k < BZ; k+=TPBY*4) {
 		for(int x = 0; x < TX; x++) {
+		for(int k = tidy*4; k < BZ; k+=TPBY*4) {
 			float4 tmp =
 				reinterpret_cast<float4 *>(const_cast<float*>(&(Val(A, bx+tx+x, bk+k, K))))[0];
 			Val(bA, k, tx+x, BX) = tmp.x;
@@ -25,13 +25,16 @@ __global__ void gemm_vectorize_kernel(const float *A, const float *B, float *C, 
 			Val(bA, k+2, tx+x, BX) = tmp.z;
 			Val(bA, k+3, tx+x, BX) = tmp.w;
 			// reinterpret_cast<float4 *>(&(Val(bA, tx+x, k, BZ)))[0] =
-        	// reinterpret_cast<float4 *>(const_cast<float*>(&(Val(A, bx+tx+x, bk+k, K))))[0];
+        	// 	reinterpret_cast<float4 *>(const_cast<float*>(&(Val(A, bx+tx+x, bk+k, K))))[0];
 			// Val(bA, tx+x, k, BZ) = Val(A, bx+tx+x, bk+k, K);
 		}
 		}
 
-		for(int k = tidx; k < BZ; k+=TPBX) {
 		for(int y = 0; y < TY; y+=2) {
+		for(int k = tidx; k < BZ; k+=TPBX) {
+			// float2 tmp = reinterpret_cast<float2 *>(const_cast<float*>(&(Val(B, bk+k, by+ty+y, M))))[0];
+			// Val(bB, ty+y, k, BY) = tmp.x;
+			// Val(bB, ty+y+1, k, BY) = tmp.y;
 			reinterpret_cast<float2 *>(&(Val(bB, k, ty+y, BY)))[0] =
         	reinterpret_cast<float2 *>(const_cast<float*>(&(Val(B, bk+k, by+ty+y, M))))[0];
 			// Val(bB, k, ty+y, BY) = Val(B, bk+k, by+ty+y, M);
@@ -41,8 +44,8 @@ __global__ void gemm_vectorize_kernel(const float *A, const float *B, float *C, 
 		for(int k = 0; k < BZ; ++k) {
 		for(int x = 0; x < TX; ++x) {
 		for(int y = 0; y < TY; ++y) {
-			// Val(tmp_z, x, y, TY) += Val(bA, tx+x, k, BZ) * Val(bB, k, ty+y, BY);
 			Val(tmp_z, x, y, TY) += Val(bA, k, tx+x, BX) * Val(bB, k, ty+y, BY);
+			// Val(tmp_z, x, y, TY) += Val(bA, k, tx+x, BX) * Val(bB, k, ty+y, BY);
 		}
 		}
 		}

@@ -8,6 +8,7 @@ __global__ void gemm_naive_kernel(const float *A, const float *B, float *C, cons
     if (n < N && m < M) {
         float sum = 0;
         for(int k = 0; k < K; ++k) {
+            // sum += A[n][k] * B[k][m]
             sum += Val(A, n, k, K) * Val(B, k, m, M);
         }
         Val(C, n, m, M) = sum;
